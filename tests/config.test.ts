@@ -72,4 +72,11 @@ describe('配置下发（下次启动生效）', () => {
     await t.client.flush()
     expect(allEvents(t.sent).map((e) => e.event)).toContain('ok')
   })
+
+  it('缓存的 geoEnabled=true 在启动时落到 options', () => {
+    const t = createTestClient()
+    t.kv.setItem(CONFIG_KEY, JSON.stringify({ geoEnabled: true }))
+    const t2 = createTestClient({}, { kv: t.kv })
+    expect(t2.client.options.geoEnabled).toBe(true)
+  })
 })

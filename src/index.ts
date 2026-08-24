@@ -18,6 +18,7 @@ import { pageleavePlugin } from './plugins/pageleave'
 import { pageviewPlugin } from './plugins/pageview'
 import { visualTrack } from './plugins/visual-track'
 import { webVitalsPlugin } from './plugins/web-vitals'
+import { geoPlugin } from './plugins/geo'
 import type { TrackOptions, TrackPlugin } from './types'
 
 /** 默认插件集：api-monitor / visual-track 默认关闭，需显式加入 */
@@ -94,8 +95,10 @@ export {
   webVitalsPlugin,
   errorPlugin,
   apiMonitorPlugin,
-  visualTrack
+  visualTrack,
+  geoPlugin
 }
+export type { GeoPluginOptions, GeoFix } from './plugins/geo'
 export { generateSelector, matchesRule } from './plugins/visual-track'
 export type { PageviewPluginOptions } from './plugins/pageview'
 export type { ApiMonitorPluginOptions } from './plugins/api-monitor'

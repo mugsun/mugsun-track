@@ -57,6 +57,8 @@ export interface RemoteConfig {
   apiBodyMaxBytes?: number
   /** 圈选规则下发（G104，status=1 规则，服务端限量） */
   visualRules?: VisualRule[]
+  /** 精确位置采集（G106） */
+  geoEnabled?: number | boolean
   [key: string]: unknown
 }
 
@@ -161,6 +163,12 @@ export interface TrackOptions {
    * visual-track 插件不在默认插件集，需显式加入 plugins 后规则才参与命中
    */
   visualRules?: VisualRule[]
+  /**
+   * 精确位置采集（G106 geo 插件），默认关。
+   * 本地显式设置强制覆盖远端下发；本地未设置时远端 geoEnabled 决定（下次启动生效）。
+   * geo 插件不在默认插件集，需显式加入 plugins 后本开关才接管启停
+   */
+  geoEnabled?: boolean
   /** 会话滑动过期 ms，默认 30min */
   sessionTimeout?: number
   /** 本地存储 key 前缀，默认 mst */
@@ -210,4 +218,6 @@ export type ResolvedTrackOptions = Required<
     apiBodyMaxBytes?: number
     /** G104 圈选规则：本地显式设置优先，未设置时远端缓存配置补齐；缺省无规则（不装监听零开销） */
     visualRules?: VisualRule[]
+    /** G106 精确位置：本地显式设置优先，未设置时远端缓存配置补齐；缺省关 */
+    geoEnabled?: boolean
   }

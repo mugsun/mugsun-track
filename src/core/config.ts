@@ -35,6 +35,7 @@ export function resolveOptions(options: TrackOptions): ResolvedTrackOptions {
     apiBodyMaxBytes: options.apiBodyMaxBytes,
     // G104 圈选规则：同上，undefined 留给远端缓存配置补齐
     visualRules: options.visualRules,
+    geoEnabled: options.geoEnabled,
     sessionTimeout: options.sessionTimeout ?? 30 * 60 * 1000,
     storagePrefix: options.storagePrefix ?? 'mst',
     plugins: options.plugins ?? [],
@@ -130,6 +131,10 @@ export class RemoteConfigManager {
     // G104 圈选规则：本地显式设置优先，未设置（undefined）时远端下发补齐；非法项过滤
     if (options.visualRules === undefined && Array.isArray(cfg.visualRules)) {
       options.visualRules = parseVisualRules(cfg.visualRules)
+    }
+    if (options.geoEnabled === undefined) {
+      const v = asBool(cfg.geoEnabled)
+      if (v !== undefined) options.geoEnabled = v
     }
     const masks = Array.isArray(cfg.maskSelectors)
       ? cfg.maskSelectors
