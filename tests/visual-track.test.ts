@@ -274,6 +274,35 @@ describe('visual-track inspect 模式（__mst_inspect 圈选）', () => {
     expect(panel.style.display).toBe('none')
   })
 
+  it('令牌失效时展示服务端说明，而不是只说请重试', async () => {
+    window.location.href = INSPECT_URL
+    window.fetch = vi.fn().mockImplementation(
+      () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              code: 401,
+              msg: '令牌无效或已过期。请重新进入圈选后再上报这条草稿'
+            }),
+            { status: 401, headers: { 'content-type': 'application/json' } }
+          )
+        )
+    ) as unknown as typeof fetch
+    createTestClient({ plugins: [visualTrack()] })
+    const btn = document.createElement('button')
+    btn.id = 'x'
+    document.body.appendChild(btn)
+    click(btn)
+    const { panel, toast } = uiParts()
+    const { input, submitBtn } = panelControls(panel)
+    input.value = 'expired_ev'
+    input.dispatchEvent(new window.Event('input'))
+    click(submitBtn)
+    await vi.waitFor(() =>
+      expect(toast.textContent).toBe('令牌无效或已过期。请重新进入圈选后再上报这条草稿')
+    )
+  })
+
   it('提交失败重试 1 次后成功', async () => {
     window.location.href = INSPECT_URL
     const fetchMock = vi

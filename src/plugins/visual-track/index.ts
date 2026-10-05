@@ -11,6 +11,19 @@ const UI_FLAG = '[data-mst-inspect-ui]'
 /** 浮层级顶（低于浏览器上限 2147483647 一档，压过页面一切浮层） */
 const Z_INDEX = '2147483646'
 const DRAFT_PATH = '/track/visual/draft'
+
+/** 服务端失败说明可以直接给圈选的人看；异常原文、内部字段名和过长句子不展示 */
+async function draftFailMessage(res: Response): Promise<string> {
+  try {
+    const data = (await res.json()) as { msg?: unknown }
+    const msg = typeof data.msg === 'string' ? data.msg.trim() : ''
+    if (!msg || msg.length > 120) return ''
+    if (/Exception|SQLException|\btoken\b/i.test(msg)) return ''
+    return msg
+  } catch {
+    return ''
+  }
+}
 const FONT = 'font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'
 
 /**
@@ -155,8 +168,9 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
     input.focus()
   }
 
-  /** 独立通道提交草稿（不进事件队列/不上 IDB，防采样丢失+防污染统计）；失败重试 1 次 */
-  const postDraft = async (body: Record<string, unknown>): Promise<boolean> => {
+  /** 独立通道提交草稿（不进事件队列/不上 IDB，防采样丢失+防污染统计）；失败重试 1 次。空串表示成功 */
+  const postDraft = async (body: Record<string, unknown>): Promise<string> => {
+    let failMsg = ''
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await window.fetch(`${options.endpoint}${DRAFT_PATH}`, {
@@ -165,12 +179,14 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
           body: JSON.stringify(body),
           keepalive: true
         })
-        if (res.ok) return true
+        if (res.ok) return ''
+        const msg = await draftFailMessage(res)
+        if (msg) failMsg = msg
       } catch {
-        // 网络失败进入重试
+        // 网络失败进入重试。已经拿到的说明留着，避免下一次失败把句子冲掉
       }
     }
-    return false
+    return failMsg || '提交失败，请重试'
   }
 
   const submit = async (): Promise<void> => {
@@ -185,14 +201,14 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
       match_text: selected.text ? truncate(selected.text, 128) : null,
       page_url: window.location.pathname
     }
-    const ok = await postDraft(body)
+    const fail = await postDraft(body)
     submitting = false
-    if (ok) {
+    if (!fail) {
       showToast('已提交圈选草稿')
       selected = null
       panel.style.display = 'none'
     } else {
-      showToast('提交失败，请重试')
+      showToast(fail)
       log('visual draft submit failed')
       validate()
     }
