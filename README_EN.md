@@ -1,36 +1,16 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/banners/github-banner-dark.png" alt="mugsun" width="100%" />
-</p>
-
 # @mugsun/track-web
 
 [简体中文](./README.md) | English
 
-**Ship “collect → private backend → dashboard” in your own repos.**  
-~5.5KB gzip core, privacy defaults on, session replay off the critical path.
+Analytics should not lock you to one cloud.  
+`@mugsun/track-web` collects in your frontend (~**5.5KB** gzip core), stores events in **your** database, and shows them on **your** dashboard.
 
-[Docs](https://docs.mugsun.com/en/track/) · [Getting started](https://docs.mugsun.com/en/guide/getting-started) · [npm](https://www.npmjs.com/package/@mugsun/track-web) · [Demo (coming soon)](https://docs.mugsun.com/en/demo)
+[Docs](https://docs.mugsun.com/en/track/) · [First event](https://docs.mugsun.com/en/track/first-event) · [npm](https://www.npmjs.com/package/@mugsun/track-web)
 
 [![npm](https://img.shields.io/npm/v/@mugsun/track-web)](https://www.npmjs.com/package/@mugsun/track-web)
-[![core gzip](https://img.shields.io/badge/core_gzip-~5.5KB-blue)](#why-this)
-[![tests](https://img.shields.io/badge/tests-155-brightgreen)](#engineering)
+[![core gzip](https://img.shields.io/badge/core_gzip-~5.5KB-blue)](#what-it-does)
+[![tests](https://img.shields.io/badge/tests-155-brightgreen)](#local-development)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-
----
-
-## Why this
-
-Most analytics tools force a trade-off: lock into a cloud SaaS, or maintain a heavy in-house script. This SDK takes a third path—
-
-1. **Your database**: talks to [mugsun-boot](https://github.com/mugsun/mugsun-boot) `/track/collect` by default, or any backend that speaks the same event protocol.
-2. **Small first paint**: ~5.5KB gzip core; replay / visual tagging / API monitor are opt-in.
-3. **Safe defaults**: honors DNT; never reads input values; masks password trees and custom selectors; supports `optOut()`.
-
-Not Google Analytics. Not another hosted product-analytics cloud.
-
----
-
-## 30-second start
 
 ```bash
 pnpm add @mugsun/track-web
@@ -54,36 +34,40 @@ import MugsunTrack from '@mugsun/track-web/vue'
 app.use(MugsunTrack, { endpoint, appKey, router })
 ```
 
-Full path to “first event on the dashboard”: [docs · first event](https://docs.mugsun.com/en/track/first-event).
+End-to-end “first event on the dashboard”: [docs · first event](https://docs.mugsun.com/en/track/first-event). There is no public demo yet—run boot + pc locally as that page describes.
 
----
+## What it does
 
-## Shape
+Most product-analytics SDKs send data to a vendor cloud. This one assumes ingest, storage, and dashboards stay in environments you control—usually [mugsun-boot](https://github.com/mugsun/mugsun-boot) `/track/collect` plus [mugsun-pc](https://github.com/mugsun/mugsun-pc). The event protocol is open, so a custom backend works too. It is not Google Analytics and does not require a hosted mugsun analytics account.
+
+The first paint ships core plus default plugins (pageview / pageleave / autocapture / exposure / web-vitals / error). Session replay, visual tagging, API monitor, and precise geo are opt-in separate entries. Queues persist in IndexedDB with exponential backoff; transport falls back sendBeacon → fetch keepalive → XHR; each event has a stable `event_id` for server-side dedupe.
+
+Privacy defaults: honor DNT, `optOut()` / `optIn()`, never read input values, mask password trees and `maskSelectors`. Replay masks inputs by default. Details: [privacy](https://docs.mugsun.com/en/track/privacy). Full APIs live in the [docs](https://docs.mugsun.com/en/track/).
+
+## How data flows
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso-en.jpg" alt="Architecture" width="100%" />
 </p>
 
-> **Screenshot placeholder** — public demo screenshots land here when ready. Until then, run boot + pc locally. See [Demo](https://docs.mugsun.com/en/demo).
+`appKey` is visible in the browser—not a secret. The server relies on existence checks, per appKey+IP rate limits, bounded queues, and event validation.
 
----
+## Related repos
 
-## Honest boundaries
+| Repo | Role |
+| --- | --- |
+| **This repo** | Browser SDK (npm or `file:`) |
+| [mugsun-boot](https://github.com/mugsun/mugsun-boot) | Ingest, config, aggregation |
+| [mugsun-pc](https://github.com/mugsun/mugsun-pc) | Admin + dashboards (`file:../mugsun-track` in monorepo-style clones) |
+| [mugsun-docs](https://github.com/mugsun/mugsun-docs) | [docs.mugsun.com](https://docs.mugsun.com/) |
 
-- **Includes**: plugin collect, offline retry, stable `event_id`, DNT/masking, optional replay & visual tagging.
-- **Does not include**: a hosted analytics account; a live public demo yet.
-- **appKey is not a secret** — browser-visible; server enforces existence, rate limits, and backpressure.
-- Deep reference lives in [docs](https://docs.mugsun.com/en/track/), not a feature wall in this README.
-
----
-
-## Engineering
+## Local development
 
 ```bash
 pnpm install && pnpm test && pnpm build
 ```
 
-Current package version **0.1.0**; core gzip gate ≤ 8KB.
+Version **0.1.0**; core gzip gate ≤ 8KB. Exports: main, `/vue`, `/replay`, `/core`.
 
 ## License
 
