@@ -46,18 +46,9 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 
 ## 数据怎么走
 
-```mermaid
-flowchart LR
-  subgraph browser["浏览器"]
-    P["插件采集"] --> Q["批量队列<br/>IndexedDB"]
-    Q --> T["sendBeacon / fetch / XHR"]
-  end
-  subgraph you["你的基础设施"]
-    T -->|HTTPS 批量| I["mugsun-boot<br/>/track/collect"]
-    I --> DB[("Postgres / Redis")]
-    DB --> UI["mugsun-pc 看板"]
-  end
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso.png" alt="Architecture" width="100%" />
+</p>
 
 appKey 在浏览器可见，**不是机密**。服务端靠存在性校验、按 appKey+IP 限流、有界队列背压与事件校验来防护，而不是指望把 key 藏起来。
 
