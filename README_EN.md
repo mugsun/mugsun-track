@@ -1,3 +1,5 @@
+![mugsun-track](https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/banners/repos/mugsun-track.png)
+
 # @mugsun/track-web
 
 [简体中文](./README.md) | English
