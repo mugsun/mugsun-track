@@ -11,13 +11,13 @@
     "pageview",
     "mugsun"
   ],
-  "homepage": "https://github.com/curdx/mugsun-track#readme",
+  "homepage": "https://github.com/mugsun/mugsun-track#readme",
   "bugs": {
-    "url": "https://github.com/curdx/mugsun-track/issues"
+    "url": "https://github.com/mugsun/mugsun-track/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/curdx/mugsun-track.git"
+    "url": "git+https://github.com/mugsun/mugsun-track.git"
   },
   "publishConfig": {
     "access": "public"
