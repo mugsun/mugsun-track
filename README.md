@@ -17,7 +17,7 @@
 | 项 | 说明 |
 | --- | --- |
 | 包名 | `@mugsun/track-web` |
-| 版本 | `0.1.0`（以 npm / `package.json` 为准） |
+| 版本 | `0.1.1`（仓内；npm 当前仍为 `0.1.0`，待发布） |
 | 运行时 | 浏览器；Node.js ≥ 20（构建与测试） |
 | 许可 | [MIT](./LICENSE) |
 | 文档 | [docs.mugsun.com/track](https://docs.mugsun.com/track/) |
