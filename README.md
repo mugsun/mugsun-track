@@ -47,7 +47,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 ## 数据怎么走
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso.png" alt="Architecture" width="100%" />
+  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso-zh.jpg" alt="Architecture" width="100%" />
 </p>
 
 appKey 在浏览器可见，**不是机密**。服务端靠存在性校验、按 appKey+IP 限流、有界队列背压与事件校验来防护，而不是指望把 key 藏起来。

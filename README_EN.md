@@ -60,12 +60,9 @@ Full path to “first event on the dashboard”: [docs · first event](https://d
 
 ## Shape
 
-```mermaid
-flowchart LR
-  A["Browser<br/>@mugsun/track-web"] -->|batched HTTPS| B["mugsun-boot<br/>/track/collect"]
-  B --> C[("Your DB")]
-  C --> D["Admin dashboard<br/>mugsun-pc"]
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso-en.jpg" alt="Architecture" width="100%" />
+</p>
 
 > **Screenshot placeholder** — public demo screenshots land here when ready. Until then, run boot + pc locally. See [Demo](https://docs.mugsun.com/en/demo).
 
