@@ -12,5 +12,5 @@
 - 提交信息：Conventional Commits，主题中文；详见 [`.github/COMMIT_CONVENTION.md`](./.github/COMMIT_CONVENTION.md)（若存在）
 - 变更记录：见 [CHANGELOG.md](./CHANGELOG.md)
 - 文档：[docs.mugsun.com](https://docs.mugsun.com/)
-- 埋点 SDK / 看板相关；npm 包 `@mugsun/track-web` 当前版本 `0.1.0`
+- 埋点 SDK / 看板相关；npm 包 `@mugsun/track-web` 当前版本 `0.1.1`（仓内；npm 仍为 `0.1.0`，待发布）
 - 提交规范见 `.github/COMMIT_CONVENTION.md`
