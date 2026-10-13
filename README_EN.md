@@ -71,7 +71,7 @@ Transport order: `sendBeacon` → `fetch` keepalive → `XHR`. The queue default
 
 `appKey` is visible in the browser and is not a secret. The server must enforce existence checks, rate limits, queue backpressure, and event validation.
 
-Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs by default. See [Privacy](https://docs.mugsun.com/en/track/privacy).
+Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs by default. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
 
 Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 5.5 KB gzip.
 

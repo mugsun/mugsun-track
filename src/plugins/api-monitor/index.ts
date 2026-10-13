@@ -1,7 +1,7 @@
 import type { PluginContext, ResolvedTrackOptions, TrackPlugin } from '../../types'
 import { createBrowserTransportDeps } from '../../adapters'
 import { Transport } from '../../core/transport'
-import { byteLength, truncate, uuid } from '../../core/utils'
+import { byteLength, redactSensitiveUrl, truncate, uuid } from '../../core/utils'
 import { ApiBodyUploader, type ApiBodyPayload, type ApiBodySendOutcome } from './uploader'
 
 export interface ApiMonitorPluginOptions {
@@ -55,7 +55,7 @@ function createDefaultGzip(): ((body: string) => Promise<ArrayBuffer>) | undefin
 }
 
 interface UrlInfo {
-  /** 绝对化后的完整 url（含查询串），上报用 */
+  /** 绝对化后的完整 url（含查询串，敏感键已脱敏），上报用 */
   href: string
   pathname: string
 }
@@ -66,7 +66,7 @@ type BodyAction = 'collect' | 'size' | 'credential' | 'skip'
 /**
  * api_request：fetch / XHR 包装监控（G102）。
  * - 启停由 apiMonitorEnabled 控制（本地显式设置优先，否则远端下发，默认关）；关则不包装
- * - url 保留完整查询串：事件名固定、url 只在 props 不进维度索引，无基数风险，排障需要查询串
+ * - url 保留查询串但剥离敏感键（token/access_token 等 → ***）：事件名固定、url 只在 props 不进维度索引；业务参数保留便于排障
  * - body 采集（apiBodyEnabled）走独立上传通道，event_id 即 body_ref；过滤链：
  *   凭证端点硬屏蔽（不可关）→ 仅 content-type 含 json → content-length 超安全阀跳过
  *   → 过链后才 clone 读体（SSE/二进制/非 JSON 在 content-type 闸口统一拦截，不读体）
@@ -103,7 +103,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
       const parseUrl = (url: string): UrlInfo | null => {
         try {
           const u = new URL(url, window.location.href)
-          return { href: truncate(u.href, 1024), pathname: u.pathname }
+          return { href: truncate(redactSensitiveUrl(u.href), 1024), pathname: u.pathname }
         } catch {
           return null
         }
@@ -196,7 +196,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           const info = parseUrl(rawUrl)
           // 自身端点：事件与 body 都不采（防自埋点循环）
           if (isSelf(info)) return callFetch(input, init)
-          const url = info?.href ?? truncate(rawUrl, 1024)
+          const url = info?.href ?? truncate(redactSensitiveUrl(rawUrl), 1024)
           const start = nowMs()
           try {
             const res = await callFetch(input, init)
@@ -281,7 +281,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           meta.start = nowMs()
           this.addEventListener('loadend', () => {
             const base: EventProps = {
-              url: meta.info?.href ?? truncate(meta.url, 1024),
+              url: meta.info?.href ?? truncate(redactSensitiveUrl(meta.url), 1024),
               method: meta.method,
               status: this.status,
               duration_ms: Math.round(nowMs() - meta.start)
