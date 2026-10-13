@@ -23,7 +23,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
       - name: Check whether version is already published
@@ -42,7 +42,7 @@ jobs:
         run: pnpm typecheck && pnpm test && pnpm build
       - if: steps.check.outputs.skip == 'false'
         name: Upgrade npm (trusted publishing needs npm >= 11.5.1)
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11.5.1
       - if: steps.check.outputs.skip == 'false'
         name: Publish via npm trusted publishing (OIDC, no token)
         run: npm publish --provenance --access public
