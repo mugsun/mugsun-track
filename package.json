@@ -93,5 +93,5 @@
   "dependencies": {
     "rrweb": "^2.1.1"
   },
-  "packageManager": "pnpm@10.18.1"
+  "packageManager": "pnpm@11.9.0"
 }
