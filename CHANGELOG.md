@@ -4,11 +4,11 @@
 
 ## [Unreleased]
 
-### 计划
-
-- （暂无已定条目）
-
 ## [0.2.0] - 2026-10-13
+
+### 变更
+
+- api-monitor：上报 URL 剥离敏感 query（`token` / `access_token` / `authorization` / `id_token` / `refresh_token` 等，大小写不敏感，值替换为 `***`；业务参数保留）。与 [隐私与合规](https://docs.mugsun.com/track/privacy) 对齐；docs 站正文若仍写旧行为需另改 `mugsun-docs`
 
 ### 变更（行为 / Breaking）
 
@@ -23,7 +23,7 @@
 
 ### 说明
 
-- URL 敏感 query 剥离见并行 PR（T1），不在本版本 diff 内。
+- URL 敏感 query 剥离来自 #2（T1），已合入 main。
 - 隐私页源码在 `mugsun-docs`；本仓 README/CHANGELOG 已对齐 docs.mugsun.com/track/privacy 承诺。
 
 ## [0.1.1] - 2026-10-12

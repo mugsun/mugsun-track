@@ -147,7 +147,7 @@ describe('api-monitor 开关（默认关，本地显式设置优先）', () => {
 // ---------------------------------------------------------------- ② 事件字段（fetch/XHR 双路径）
 
 describe('api-monitor 事件采集（fetch/XHR 同口径）', () => {
-  it('fetch：method/url(含查询串)/status/耗时/响应大小/page 公共属性', async () => {
+  it('fetch：method/url(含查询串，敏感键脱敏)/status/耗时/响应大小/page 公共属性', async () => {
     const cap = captureBodySend()
     window.fetch = (async () =>
       jsonResponse('{"ok":true}', { 'content-length': '11' })) as typeof fetch
@@ -161,7 +161,7 @@ describe('api-monitor 事件采集（fetch/XHR 同口径）', () => {
     await t.client.flush()
     const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
     expect(ev).toBeTruthy()
-    expect(ev?.props.url).toBe('https://api.example.com/users?token=secret&page=1')
+    expect(ev?.props.url).toBe('https://api.example.com/users?token=***&page=1')
     expect(ev?.props.method).toBe('GET')
     expect(ev?.props.status).toBe(200)
     expect(ev?.props.success).toBe(true)
@@ -209,6 +209,57 @@ describe('api-monitor 事件采集（fetch/XHR 同口径）', () => {
     const events = allEvents(t.sent).filter((e) => e.event === 'api_request')
     expect(events).toHaveLength(1)
     expect(events[0].props.url).toBe('https://t.example.com/biz/list')
+  })
+})
+
+// ---------------------------------------------------------------- ②b URL 敏感 query 脱敏
+
+describe('api-monitor URL 敏感 query 脱敏', () => {
+  it('剥离 token/access_token/authorization/id_token/refresh_token（大小写不敏感），保留业务参数', async () => {
+    window.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
+    const t = setup()
+    await window.fetch(
+      'https://api.example.com/cb?Token=SECRET&page=2&access_token=a1&Authorization=Bearer%20x&id_token=i1&refresh_token=r1&q=ok'
+    )
+    await t.client.flush()
+    const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
+    const url = String(ev?.props.url)
+    expect(url).toContain('page=2')
+    expect(url).toContain('q=ok')
+    expect(url).toMatch(/Token=\*\*\*/i)
+    expect(url).toMatch(/access_token=\*\*\*/i)
+    expect(url).toMatch(/Authorization=\*\*\*/i)
+    expect(url).toMatch(/id_token=\*\*\*/i)
+    expect(url).toMatch(/refresh_token=\*\*\*/i)
+    expect(url).not.toContain('SECRET')
+    expect(url).not.toContain('a1')
+    expect(url).not.toContain('Bearer')
+    expect(url).not.toContain('i1')
+    expect(url).not.toContain('r1')
+  })
+
+  it('XHR 路径同样脱敏', async () => {
+    useFakeXhr()
+    const t = setup()
+    const xhr = new FakeXHR() as unknown as XMLHttpRequest
+    xhr.open('GET', 'https://api.example.com/orders?api_key=sk-live&source=app')
+    const fake = FakeXHR.instances[0]
+    fake.status = 200
+    fake.responseHeaders = { 'content-type': 'text/plain' }
+    xhr.send()
+    fake.fire('loadend')
+    await t.client.flush()
+    const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
+    expect(ev?.props.url).toBe('https://api.example.com/orders?api_key=***&source=app')
+  })
+
+  it('无敏感键时 URL 原样保留', async () => {
+    window.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
+    const t = setup()
+    await window.fetch('https://api.example.com/list?page=1&sort=name')
+    await t.client.flush()
+    const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
+    expect(ev?.props.url).toBe('https://api.example.com/list?page=1&sort=name')
   })
 })
 
