@@ -112,4 +112,4 @@ pnpm build     # 产出 dist/；体积门禁见 scripts/report-size.mjs
 
 ## 许可
 
-[MIT](./LICENSE)
+[MIT](./LICENSE) · © 2026 北京定旭晨 / mugsun
