@@ -222,7 +222,7 @@ export async function runSelfCheck(
 
   // ---- filters
   const f: string[] = []
-  if (o.beforeSend) f.push('beforeSend')
+  if (o.beforeSend) f.push(`beforeSend(抛错${o.beforeSendOnError === 'keep' ? '保留' : '丢弃'})`)
   if (o.ignoreErrors)
     f.push(
       typeof o.ignoreErrors === 'function'

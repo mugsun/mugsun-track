@@ -81,7 +81,7 @@ Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size i
 const tracker = createTracker({
   endpoint: 'https://api.example.com',
   appKey: 'your-app-key',
-  // Rewrite or drop before sending (return null/false to drop); session events bypass it
+  // Rewrite props or drop before sending (return null/false to drop); a throwing hook drops the event by default
   beforeSend: (e) => (e.event === 'debug_only' ? null : e),
   // Strings match a message substring, RegExps test the message, or a predicate (error, message) => boolean
   ignoreErrors: ['ResizeObserver loop', /^AbortError/],
@@ -95,6 +95,8 @@ const report = await tracker.selfCheck()
 console.table(report.items) // each { id, status: 'ok'|'warn'|'fail', message, fix }
 ```
 
+- `beforeSend` merges only the returned object's `props` (`event_id`, `distinct_id` etc. can't be changed); non-object return values mean "unchanged". If the hook throws, the event is **dropped by default** so a broken masking hook can't leak unmasked data; set `beforeSendOnError: 'keep'` to send the original event instead.
+- **Not covered by `beforeSend`**: session events (`$session_start` / `$session_end`), **session replay** chunks and **API response body** uploads. Use `maskTextSelector` / `maskSelectors` for replay and `apiBodyMaskEnabled` (on by default) for bodies.
 - `selfCheck()` makes one real `GET /track/config?app_key=` request (no cookies), sends no user data and enqueues nothing. Messages are in Chinese.
 - `trackApiError` emits an `api_request` event (`success=false`, `source=manual`, with `biz_code`), same shape as `api-monitor`.
 - `ignoreErrors` / `skipHandledErrors` apply to the `error` plugin (window error, unhandledrejection) and the Vue `errorHandler`.

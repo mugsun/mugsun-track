@@ -81,7 +81,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 const tracker = createTracker({
   endpoint: 'https://api.example.com',
   appKey: 'your-app-key',
-  // 发送前改写或丢弃（返回 null/false 丢弃）；会话事件不经过此钩子
+  // 发送前改写 props 或丢弃（返回 null/false 丢弃）；钩子抛错默认丢弃该事件
   beforeSend: (e) => (e.event === 'debug_only' ? null : e),
   // 字符串按 message 子串、RegExp 按 message、或谓词 (error, message) => boolean
   ignoreErrors: ['ResizeObserver loop', /^AbortError/],
@@ -97,6 +97,8 @@ const report = await tracker.selfCheck()
 console.table(report.items) // 每项 { id, status: 'ok'|'warn'|'fail', message, fix }
 ```
 
+- `beforeSend` 只合并返回对象的 `props`（`event_id`、`distinct_id` 等不可改），非对象返回值视为不改。钩子抛错时**默认丢弃**该事件，避免脱敏钩子出错时发出未脱敏数据；需要保留可设 `beforeSendOnError: 'keep'`（发送钩子处理前的原事件）。
+- **`beforeSend` 不经过的数据**：会话事件（`$session_start` / `$session_end`）、**会话回放**块、**接口响应体**上传。回放请用 `maskTextSelector` / `maskSelectors`，响应体请用 `apiBodyMaskEnabled`（默认开启）。
 - `selfCheck()` 只真实请求一次 `GET /track/config?app_key=`（不带 cookie），不发送任何用户数据、不入事件队列。
 - `trackApiError` 上报 `api_request` 事件（`success=false`、`source=manual`，带 `biz_code`），与 `api-monitor` 同口径。
 - `ignoreErrors` / `skipHandledErrors` 对 `error` 插件（window error、unhandledrejection）与 Vue `errorHandler` 同时生效。

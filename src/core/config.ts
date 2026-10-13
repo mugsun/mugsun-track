@@ -43,7 +43,8 @@ export function resolveOptions(options: TrackOptions): ResolvedTrackOptions {
     debug: options.debug ?? false,
     beforeSend: options.beforeSend,
     ignoreErrors: options.ignoreErrors,
-    skipHandledErrors: options.skipHandledErrors ?? true
+    skipHandledErrors: options.skipHandledErrors ?? true,
+    beforeSendOnError: options.beforeSendOnError === 'keep' ? 'keep' : 'drop'
   }
 }
 

@@ -111,7 +111,7 @@ describe('selfCheck', () => {
 })
 
 describe('beforeSend', () => {
-  it('可改写、返回 null 丢弃、抛错保留原事件；会话事件不经过钩子', async () => {
+  it('可改写 props、返回 null 丢弃、抛错默认丢弃；会话事件不经过钩子', async () => {
     const seen: string[] = []
     const t = createTestClient({
       beforeSend: (e) => {
@@ -123,13 +123,56 @@ describe('beforeSend', () => {
     })
     expect(t.client.track('drop_me')).toBeNull()
     t.client.track('keep', { url: 'https://x/?token=1' })
-    t.client.track('boom')
+    expect(t.client.track('boom', { email: 'a@b.c' })).toBeNull()
     t.client.identify('u1')
     await t.client.flush()
     const evs = allEvents(t.sent)
-    expect(evs.map((e) => e.event)).toEqual(['$session_start', 'keep', 'boom', '$identify'])
+    expect(evs.map((e) => e.event)).toEqual(['$session_start', 'keep', '$identify'])
     expect(evs.find((e) => e.event === 'keep')?.props.url).toBe('redacted')
+    expect(JSON.stringify(evs)).not.toContain('a@b.c')
     expect(seen).not.toContain('$session_start')
+  })
+
+  it("beforeSendOnError='keep'：抛错发送钩子处理前的原事件（钩子就地修改不生效）", async () => {
+    const t = createTestClient({
+      beforeSendOnError: 'keep',
+      beforeSend: (e) => {
+        e.props.touched = 1
+        throw new Error('x')
+      }
+    })
+    t.client.track('k', { a: 1 })
+    await t.client.flush()
+    const ev = allEvents(t.sent).find((e) => e.event === 'k')
+    expect(ev?.props.a).toBe(1)
+    expect(ev?.props.touched).toBeUndefined()
+  })
+
+  it('返回值只合并 props：event_id / distinct_id / event 改动被忽略，非法返回值视为不改', async () => {
+    const t = createTestClient({
+      beforeSend: (e) => {
+        if (e.event === 'weird') return 42 as never
+        if (e.event === 'badprops') return { ...e, props: 'x' as never }
+        return {
+          ...e,
+          event: 'hijacked',
+          event_id: 'fixed',
+          distinct_id: 'other',
+          props: { ok: 1 }
+        }
+      }
+    })
+    const id = t.client.track('a')
+    t.client.track('weird', { w: 1 })
+    t.client.track('badprops', { b: 1 })
+    await t.client.flush()
+    const evs = allEvents(t.sent).filter((e) => e.event !== '$session_start')
+    expect(evs.map((e) => e.event)).toEqual(['a', 'weird', 'badprops'])
+    expect(evs[0].event_id).toBe(id)
+    expect(evs[0].distinct_id).toBe(t.client.getDistinctId())
+    expect(evs[0].props).toEqual({ ok: 1 })
+    expect(evs[1].props.w).toBe(1)
+    expect(evs[2].props.b).toBe(1)
   })
 })
 

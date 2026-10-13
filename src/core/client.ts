@@ -373,21 +373,26 @@ export class TrackClient {
     return !this.disabled && !this.optedOut && this.sampled
   }
 
-  /** beforeSend 钩子：返回 null/false 丢弃；抛错保留原事件 */
+  /**
+   * beforeSend 钩子：返回 null/false 丢弃；返回对象只合并其 props（身份字段不可改）；
+   * 抛错按 beforeSendOnError 处理（默认丢弃，fail-closed）
+   */
   private applyBeforeSend(ev: TrackEvent): TrackEvent | null {
     const hook = this.options.beforeSend
     if (!hook) return ev
+    let out: TrackEvent | null | false | undefined
     try {
-      const out = hook(ev)
-      if (out === null || out === false) {
-        this.log(`beforeSend dropped ${ev.event}`)
-        return null
-      }
-      return out && typeof out === 'object' ? out : ev
+      // 钩子拿副本：就地改 props 后抛错也不会污染 keep 模式下发出的原事件
+      out = hook({ ...ev, props: { ...ev.props } })
     } catch (err) {
-      this.log('beforeSend threw, event kept', err)
-      return ev
+      this.log('beforeSend threw', err)
+      return this.options.beforeSendOnError === 'keep' ? ev : null
     }
+    if (out === null || out === false) return null
+    if (!out || typeof out !== 'object') return ev
+    const props = out.props
+    if (!props || typeof props !== 'object' || Array.isArray(props)) return ev
+    return { ...ev, props: sanitizeProps(props as Props) }
   }
 
   private notifySessionChange(sessionId: string | null): void {
