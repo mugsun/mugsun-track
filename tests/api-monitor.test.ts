@@ -531,7 +531,7 @@ describe('api-body 独立上传通道（不占事件队列）', () => {
 
 // ---------------------------------------------------------------- ⑨ 业务字段脱敏
 
-describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
+describe('api-body 脱敏（apiBodyMaskEnabled，默认开）', () => {
   const BODY = JSON.stringify({
     password: 'p1',
     user: { phone: '13800000000', name: '张三', Token: 't-1' },
@@ -539,13 +539,11 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
     ok: true
   })
 
-  it('开启：键清单命中（大小写不敏感）替换 ***，对象/数组递归', async () => {
+  it('默认开启：键清单命中（大小写不敏感）替换 ***，对象/数组递归', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
-    const t = setup(
-      { apiBodyEnabled: true, apiBodyMaskEnabled: true },
-      { send: cap.send, gzip: fakeGzip }
-    )
+    // 不显式传 apiBodyMaskEnabled：插件兜底默认 true
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
     await window.fetch('https://api.example.com/me')
     await settle()
     expect(cap.calls).toHaveLength(1)
@@ -557,10 +555,13 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
     t.client.destroy()
   })
 
-  it('关闭（默认）：原文上传不脱敏', async () => {
+  it('显式关闭：原文上传不脱敏', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
-    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    const t = setup(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: false },
+      { send: cap.send, gzip: fakeGzip }
+    )
     await window.fetch('https://api.example.com/me')
     await settle()
     expect(decodeBody(cap.calls[0].payload)).toBe(BODY)

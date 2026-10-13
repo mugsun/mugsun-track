@@ -17,7 +17,7 @@ This repository publishes a browser analytics SDK. Collection, storage, and dash
 | Item | Detail |
 | --- | --- |
 | Package | `@mugsun/track-web` |
-| Version | `0.1.1` (repo tip; npm still `0.1.0` until publish) |
+| Version | `0.2.0` (repo tip; npm still `0.1.0` until publish) |
 | Runtime | Browser; Node.js ≥ 20 for build and test |
 | License | [MIT](./LICENSE) |
 | Docs | [docs.mugsun.com/en/track](https://docs.mugsun.com/en/track/) |
@@ -71,7 +71,7 @@ Transport order: `sendBeacon` → `fetch` keepalive → `XHR`. The queue default
 
 `appKey` is visible in the browser and is not a secret. The server must enforce existence checks, rate limits, queue backpressure, and event validation.
 
-Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs by default. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
+Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs and page text by default (`maskTextSelector: '*'`, can be disabled); `apiBodyMaskEnabled` defaults to on. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
 
 Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 5.5 KB gzip.
 
