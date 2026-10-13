@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 文档
+
+- CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语
+
 ## [0.2.0] - 2026-10-13
 
 ### 变更
@@ -19,7 +23,7 @@
 
 1. 升级至 `0.2.0` 后，回放画面中的页面文本默认被遮罩；若需可读文本回放，在注册 replay 插件时传 `maskTextSelector: false`（或更窄的选择器）。
 2. 若业务依赖 api-body 原文（含 password/token/phone 等字段），升级后须显式 `apiBodyMaskEnabled: false`，否则敏感键值会变为 `***`。
-3. 本版本**尚未** `npm publish`；以仓内 `package.json` / `SDK_VERSION` 为准。
+3. 已于 2026-10-13 经 release 工作流（npm Trusted Publishing）发布至 npm。
 
 ### 说明
 
