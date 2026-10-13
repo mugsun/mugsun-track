@@ -180,7 +180,28 @@ export interface TrackOptions {
   /** 上报额外请求头（如登录态 Authorization，供服务端身份裁定）；beacon 场景无法携带 */
   headers?: Record<string, string> | (() => Record<string, string>)
   debug?: boolean
+  /**
+   * 发送前钩子：每个业务事件入队前调用；返回 null/false 丢弃该事件。
+   * 返回对象时只取其 props 合并回事件（event_id/distinct_id/ts 等身份字段不可改），非对象返回值视为不改。
+   * 钩子抛错时默认丢弃该事件（fail-closed，避免脱敏钩子出错时把未脱敏的原事件发出），见 beforeSendOnError。
+   * 会话事件（$session_start/$session_end）、会话回放块与接口响应体上传不经过此钩子（请用 mask 系列选项）
+   */
+  beforeSend?: (event: TrackEvent) => TrackEvent | null | false | undefined
+  /**
+   * 忽略的错误（error 插件 window error / unhandledrejection 与 Vue errorHandler 生效）：
+   * 字符串按 message 子串匹配、RegExp 按 message 测试；或谓词 (error, message) => true 表示忽略
+   */
+  ignoreErrors?: IgnoreErrors
+  /** beforeSend 抛错时的处理：'drop'（默认，丢弃事件）或 'keep'（发送钩子处理前的原事件） */
+  beforeSendOnError?: 'drop' | 'keep'
+  /**
+   * 默认跳过「已处理/预期」错误，默认 true：error.name === 'HttpError'，
+   * 或 error.handled === true / error.expected === true（业务已提示用户的接口错误等）。设 false 全部上报
+   */
+  skipHandledErrors?: boolean
 }
+
+export type IgnoreErrors = Array<string | RegExp> | ((error: unknown, message: string) => boolean)
 
 export type ResolvedTrackOptions = Required<
   Pick<
@@ -205,7 +226,9 @@ export type ResolvedTrackOptions = Required<
     | 'debug'
   >
 > &
-  Pick<TrackOptions, 'release' | 'headers'> & {
+  Pick<TrackOptions, 'release' | 'headers' | 'beforeSend' | 'ignoreErrors'> & {
+    skipHandledErrors: boolean
+    beforeSendOnError: 'drop' | 'keep'
     maskSelectors: string[]
     plugins: TrackPlugin[]
     /**

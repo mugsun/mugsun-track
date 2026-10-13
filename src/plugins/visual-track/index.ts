@@ -108,7 +108,8 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
   const closeBtn = doc.createElement('button')
   closeBtn.type = 'button'
   closeBtn.textContent = '退出'
-  closeBtn.style.cssText = 'background:transparent;border:1px solid #9ca3af;color:#fff;border-radius:4px;padding:2px 10px;cursor:pointer'
+  closeBtn.style.cssText =
+    'background:transparent;border:1px solid #9ca3af;color:#fff;border-radius:4px;padding:2px 10px;cursor:pointer'
   bar.append(barText, closeBtn)
 
   const panel = doc.createElement('div')
@@ -118,17 +119,20 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
   const input = doc.createElement('input')
   input.type = 'text'
   input.placeholder = '事件名：字母开头，后面只能是字母、数字或下划线，最长 64 位'
-  input.style.cssText = 'box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;margin-bottom:4px'
+  input.style.cssText =
+    'box-sizing:border-box;width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;margin-bottom:4px'
   const hint = doc.createElement('div')
   hint.style.cssText = 'color:#dc2626;min-height:18px;margin-bottom:4px'
   const submitBtn = doc.createElement('button')
   submitBtn.type = 'button'
   submitBtn.textContent = '提交'
-  submitBtn.style.cssText = 'background:#3b82f6;border:none;color:#fff;border-radius:4px;padding:6px 16px;cursor:pointer;margin-right:8px'
+  submitBtn.style.cssText =
+    'background:#3b82f6;border:none;color:#fff;border-radius:4px;padding:6px 16px;cursor:pointer;margin-right:8px'
   const reselectBtn = doc.createElement('button')
   reselectBtn.type = 'button'
   reselectBtn.textContent = '重选'
-  reselectBtn.style.cssText = 'background:transparent;border:1px solid #d1d5db;color:#374151;border-radius:4px;padding:6px 16px;cursor:pointer'
+  reselectBtn.style.cssText =
+    'background:transparent;border:1px solid #d1d5db;color:#374151;border-radius:4px;padding:6px 16px;cursor:pointer'
   panel.append(summary, input, hint, submitBtn, reselectBtn)
 
   const toast = doc.createElement('div')
@@ -153,7 +157,10 @@ function setupInspect(ctx: PluginContext, token: string): () => void {
   const validate = (): boolean => {
     const ok = CUSTOM_EVENT_NAME_RE.test(input.value)
     submitBtn.disabled = !ok
-    hint.textContent = ok || input.value === '' ? '' : '事件名不合法。请用字母开头，后面只能是字母、数字或下划线，最长 64 位'
+    hint.textContent =
+      ok || input.value === ''
+        ? ''
+        : '事件名不合法。请用字母开头，后面只能是字母、数字或下划线，最长 64 位'
     return ok
   }
 

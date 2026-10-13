@@ -3,7 +3,14 @@
  * 体积门禁作用于此入口（gzip ≤ 8KB）；浏览器一键初始化请用主入口的 createTracker。
  */
 export { TrackClient } from './core/client'
-export type { ClientDeps, ExposureParams } from './core/client'
+export type { ApiErrorParams, ClientDeps, ExposureParams } from './core/client'
+export type {
+  CheckStatus,
+  PingResult,
+  Pinger,
+  SelfCheckItem,
+  SelfCheckReport
+} from './core/selfCheck'
 export { Transport } from './core/transport'
 export type { SendResult, TransportDeps, SendOptions } from './core/transport'
 export { EventQueue } from './core/queue'
@@ -29,6 +36,7 @@ export {
 } from './core/utils'
 export type {
   Clock,
+  IgnoreErrors,
   KeyValueStore,
   PluginContext,
   Props,

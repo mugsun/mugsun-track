@@ -27,7 +27,8 @@ export function errorPlugin(): TrackPlugin {
       if (typeof window === 'undefined') return
       const { client, options } = ctx
 
-      const report = (props: Props) => {
+      const report = (props: Props, error?: unknown) => {
+        if (client.isIgnoredError(error, String(props.message ?? ''))) return
         const message = truncate(String(props.message ?? 'unknown'), 512)
         const stack = props.stack ? truncate(String(props.stack), 4096) : undefined
         client.track('$error', {
@@ -42,14 +43,17 @@ export function errorPlugin(): TrackPlugin {
       const onError = (e: Event) => {
         // ErrorEvent：JS 运行时错误；其余捕获阶段落到具体元素上的是资源加载错误
         if (e instanceof ErrorEvent && e.message) {
-          report({
-            error_type: 'js',
-            message: e.message,
-            stack: e.error instanceof Error ? e.error.stack : undefined,
-            filename: e.filename,
-            lineno: e.lineno,
-            colno: e.colno
-          })
+          report(
+            {
+              error_type: 'js',
+              message: e.message,
+              stack: e.error instanceof Error ? e.error.stack : undefined,
+              filename: e.filename,
+              lineno: e.lineno,
+              colno: e.colno
+            },
+            e.error
+          )
           return
         }
         const target = e.target as (Element & { src?: string; href?: string }) | null
@@ -65,11 +69,14 @@ export function errorPlugin(): TrackPlugin {
 
       const onRejection = (e: PromiseRejectionEvent) => {
         const reason = e.reason
-        report({
-          error_type: 'promise',
-          message: reason instanceof Error ? reason.message : String(reason),
-          stack: reason instanceof Error ? reason.stack : undefined
-        })
+        report(
+          {
+            error_type: 'promise',
+            message: reason instanceof Error ? reason.message : String(reason),
+            stack: reason instanceof Error ? reason.stack : undefined
+          },
+          reason
+        )
       }
 
       window.addEventListener('error', onError, true)

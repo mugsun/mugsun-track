@@ -9,7 +9,7 @@ This repository publishes a browser analytics SDK. Collection, storage, and dash
 [Documentation](https://docs.mugsun.com/en/track/) · [First event](https://docs.mugsun.com/en/track/first-event) · [npm](https://www.npmjs.com/package/@mugsun/track-web)
 
 [![npm](https://img.shields.io/npm/v/@mugsun/track-web)](https://www.npmjs.com/package/@mugsun/track-web)
-[![core gzip](https://img.shields.io/badge/core_gzip-~5.5KB-blue)](#composition)
+[![core gzip](https://img.shields.io/badge/core_gzip-~6.3KB-blue)](#composition)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 ## Overview
@@ -73,7 +73,36 @@ Transport order: `sendBeacon` → `fetch` keepalive → `XHR`. The queue default
 
 Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs and page text by default (`maskTextSelector: '*'`, can be disabled); `apiBodyMaskEnabled` defaults to on. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
 
-Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 5.5 KB gzip.
+Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 6.3 KB gzip.
+
+## Self-check and error filtering
+
+```ts
+const tracker = createTracker({
+  endpoint: 'https://api.example.com',
+  appKey: 'your-app-key',
+  // Rewrite props or drop before sending (return null/false to drop); a throwing hook drops the event by default
+  beforeSend: (e) => (e.event === 'debug_only' ? null : e),
+  // Strings match a message substring, RegExps test the message, or a predicate (error, message) => boolean
+  ignoreErrors: ['ResizeObserver loop', /^AbortError/],
+  // Default true: skip name==='HttpError' and errors flagged handled/expected
+  skipHandledErrors: true
+})
+
+tracker.trackApiError({ url: '/api/order', method: 'POST', status: 200, bizCode: 40001, message: 'Out of stock' })
+
+const report = await tracker.selfCheck()
+console.table(report.items) // each { id, status: 'ok'|'warn'|'fail', message, fix }
+```
+
+- `beforeSend` merges only the returned object's `props` (`event_id`, `distinct_id` etc. can't be changed); non-object return values mean "unchanged". If the hook throws, the event is **dropped by default** so a broken masking hook can't leak unmasked data; set `beforeSendOnError: 'keep'` to send the original event instead.
+- **Not covered by `beforeSend`**: session events (`$session_start` / `$session_end`), **session replay** chunks and **API response body** uploads. Use `maskTextSelector` / `maskSelectors` for replay and `apiBodyMaskEnabled` (on by default) for bodies.
+- `selfCheck()` makes one real `GET /track/config?app_key=` request (no cookies), sends no user data and enqueues nothing. Messages are in Chinese.
+- `trackApiError` emits an `api_request` event (`success=false`, `source=manual`, with `biz_code`), same shape as `api-monitor`; sensitive query values in `url` (`token`, `access_token`, …) are replaced with `***`.
+- **Behavior change**: `skipHandledErrors` defaults to `true`, so after upgrading `HttpError` and handled/expected errors are no longer reported as `$error`; set it to `false` for the old behavior.
+- `ignoreErrors` / `skipHandledErrors` apply to the `error` plugin (window error, unhandledrejection) and the Vue `errorHandler`.
+- The collect URL carries `?app_key=` so the server can attribute rejected requests (unparseable or oversized bodies) to the app; see "Integration health" in the admin UI.
+- The self-check implementation is injected by `createTracker` and is not part of the core entry; core-only users inject `deps.selfCheck = runSelfCheck`.
 
 ## Scope
 

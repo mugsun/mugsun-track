@@ -4,6 +4,28 @@
 
 ## [Unreleased]
 
+> 计划版本：**0.3.0**（minor，含下方行为变更）。本 PR 不改 `package.json` 版本号，避免合入即触发自动发布；发版另走版本 PR。
+
+### 行为变更
+
+- **`skipHandledErrors` 默认 `true`**：error 插件（window error / unhandledrejection）与 Vue errorHandler 默认不再上报 `name === 'HttpError'` 及 `handled === true` / `expected === true` 的错误。升级后 `$error` 数量可能下降；需要旧行为请设 `skipHandledErrors: false`，或用 `trackApiError` 单独统计接口失败。
+- collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
+
+### 修复
+
+- endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`
+
+### 新增
+
+- `tracker.selfCheck()`：结构化接入自检（config / ping / sampling / consent / privacy / queue / replay / filters，每项 ok/warn/fail + message + fix），只真实请求一次 `GET /track/config?app_key=`，不发送用户数据。实现由 `createTracker` 注入，不进 core 入口
+- `beforeSend(event)` 钩子（返回 null/false 丢弃；只合并返回的 props；抛错默认丢弃，`beforeSendOnError: 'keep'` 可改为发送原事件；不覆盖回放与接口响应体）、`ignoreErrors`（字符串/RegExp/谓词）、`skipHandledErrors` 开关（默认值见上方「行为变更」）
+- `trackApiError({ url, method, status, bizCode, message, durationMs })`：手动上报 `api_request`（success=false, source=manual）；url 与 api-monitor 同口径脱敏敏感 query（`token` / `access_token` 等值替换为 `***`）后截断 512
+- 服务端可凭 collect 地址上的 `app_key` 对解析失败/超限的请求归因（接入健康）
+
+### 体积
+
+- core.js gzip 5.48 → 6.33 KB（门禁 8 KB）；index.js gzip 14.99 → 18.06 KB；vue/index.js 9.94 → 13.28 KB
+
 ### 文档
 
 - CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语
