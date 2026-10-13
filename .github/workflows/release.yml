@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm when version changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+      - name: Check whether version is already published
+        id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VER" version >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "$NAME@$VER already on npm"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"; echo "Will publish $NAME@$VER"
+          fi
+      - if: steps.check.outputs.skip == 'false'
+        run: pnpm install --frozen-lockfile
+      - if: steps.check.outputs.skip == 'false'
+        run: pnpm typecheck && pnpm test && pnpm build
+      - if: steps.check.outputs.skip == 'false'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
