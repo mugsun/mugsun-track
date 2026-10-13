@@ -82,6 +82,11 @@ const SENSITIVE_QUERY_KEYS = new Set([
  * 剥离 URL 查询串中的敏感键值（大小写不敏感）。
  * 非法 URL 原样返回；无查询串不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
  */
+/** endpoint 归一：去首尾空白与末尾所有斜杠，避免拼出 //track/collect、//track/config */
+export function normalizeEndpoint(endpoint: string): string {
+  return String(endpoint).trim().replace(/\/+$/, '')
+}
+
 export function redactSensitiveUrl(url: string): string {
   try {
     const u = new URL(url, 'https://placeholder.invalid')

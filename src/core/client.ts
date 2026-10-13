@@ -22,7 +22,7 @@ import { TimeEventTracker } from './timeEvent'
 import { Transport } from './transport'
 import { isIgnoredError } from './errorFilter'
 import type { Pinger, SelfCheckReport, SelfCheckRunner } from './selfCheck'
-import { sanitizeProps, truncate, uuid } from './utils'
+import { redactSensitiveUrl, sanitizeProps, truncate, uuid } from './utils'
 
 export interface ClientDeps {
   kv: KeyValueStore
@@ -202,7 +202,8 @@ export class TrackClient {
    */
   trackApiError(p: ApiErrorParams): string | null {
     return this.track('api_request', {
-      url: truncate(String(p.url ?? ''), 512),
+      // 与 api-monitor 同口径：token/access_token 等敏感 query 值替换为 ***，再截断
+      url: truncate(redactSensitiveUrl(String(p.url ?? '')), 512),
       method: (p.method ?? 'GET').toUpperCase(),
       status: p.status ?? 0,
       duration_ms: p.durationMs,

@@ -7,6 +7,7 @@ import {
   IdbQueueStore
 } from './adapters'
 import { TrackClient } from './core/client'
+import { normalizeEndpoint } from './core/utils'
 import { runSelfCheck, type PingResult } from './core/selfCheck'
 import { SystemClock } from './core/clock'
 import { MemoryQueueStore } from './core/storage'
@@ -60,7 +61,7 @@ export function defaultPlugins(): TrackPlugin[] {
  * hidden 与 pagehide 时自动 beacon 冲刷。
  */
 export function createTracker(options: TrackOptions): TrackClient {
-  const endpoint = options.endpoint.replace(/\/+$/, '')
+  const endpoint = normalizeEndpoint(options.endpoint)
   const getHeaders = (): Record<string, string> => {
     const h = options.headers
     return typeof h === 'function' ? h() : (h ?? {})

@@ -235,6 +235,19 @@ describe('ignoreErrors / skipHandledErrors', () => {
 })
 
 describe('trackApiError', () => {
+  it('url 敏感 query 脱敏（token / access_token），业务参数保留', async () => {
+    const t = createTestClient()
+    t.client.trackApiError({
+      url: 'https://api.x.com/o?id=7&token=abc&access_token=xyz&Authorization=q'
+    })
+    await t.client.flush()
+    const url = String(allEvents(t.sent).find((e) => e.event === 'api_request')?.props.url)
+    expect(url).not.toContain('abc')
+    expect(url).not.toContain('xyz')
+    expect(url).toContain('id=7')
+    expect(url).toContain('***')
+  })
+
   it('上报 api_request(success=false, source=manual)，带 biz_code 与截断 message', async () => {
     const t = createTestClient()
     const id = t.client.trackApiError({
@@ -260,6 +273,26 @@ describe('trackApiError', () => {
 })
 
 describe('createTracker', () => {
+  it.each(['https://t.example.com/', 'https://t.example.com//', ' https://t.example.com/ '])(
+    'endpoint %j 末尾斜杠/空白：collect、config、selfCheck ping 都不出现 //track',
+    async (endpoint) => {
+      const urls: string[] = []
+      vi.stubGlobal('CompressionStream', undefined)
+      vi.stubGlobal('fetch', async (url: string) => {
+        urls.push(url)
+        return new Response(JSON.stringify({ code: 200, data: { enabled: true } }), { status: 200 })
+      })
+      const c = createTracker({ appKey: 'k1', endpoint, plugins: [] })
+      c.track('x')
+      await c.flush()
+      await c.selfCheck()
+      c.destroy()
+      expect(urls).toContain('https://t.example.com/track/collect?app_key=k1')
+      expect(urls).toContain('https://t.example.com/track/config?app_key=k1')
+      expect(urls.every((u) => !u.includes('//track'))).toBe(true)
+    }
+  )
+
   it('collect URL 带 ?app_key=，selfCheck ping 走 fetch 且不带凭据', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     vi.stubGlobal('CompressionStream', undefined)

@@ -5,14 +5,14 @@ import type {
   TrackOptions,
   VisualRule
 } from '../types'
-import { CUSTOM_EVENT_NAME_RE, safeParse } from './utils'
+import { CUSTOM_EVENT_NAME_RE, normalizeEndpoint, safeParse } from './utils'
 
 export function resolveOptions(options: TrackOptions): ResolvedTrackOptions {
   if (!options.appKey) throw new Error('[track] appKey 必填')
   if (!options.endpoint) throw new Error('[track] endpoint 必填')
   return {
     appKey: options.appKey,
-    endpoint: options.endpoint.replace(/\/+$/, ''),
+    endpoint: normalizeEndpoint(options.endpoint),
     release: options.release,
     headers: options.headers,
     sampleRate: options.sampleRate ?? 100,
