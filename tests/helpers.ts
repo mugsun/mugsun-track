@@ -1,4 +1,5 @@
 import type { ClientDeps } from '../src/core/client'
+import { runSelfCheck } from '../src/core/selfCheck'
 import { TrackClient } from '../src/core/client'
 import { MemoryKeyValueStore, MemoryQueueStore } from '../src/core/storage'
 import { Transport, type TransportDeps } from '../src/core/transport'
@@ -82,6 +83,7 @@ export function createTestClient(
       transport: recording.transport,
       clock,
       contextProvider: () => ({ ...context }),
+      selfCheck: runSelfCheck,
       ...deps
     }
   )

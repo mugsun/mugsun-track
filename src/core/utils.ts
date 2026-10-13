@@ -64,7 +64,6 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
   return out
 }
 
-
 /** 上报 URL 敏感 query 键（小写归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
 const SENSITIVE_QUERY_KEYS = new Set([
   'token',

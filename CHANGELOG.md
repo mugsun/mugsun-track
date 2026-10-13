@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `tracker.selfCheck()`：结构化接入自检（config / ping / sampling / consent / privacy / queue / replay / filters，每项 ok/warn/fail + message + fix），只真实请求一次 `GET /track/config?app_key=`，不发送用户数据。实现由 `createTracker` 注入，不进 core 入口
+- `beforeSend(event)` 钩子（返回 null/false 丢弃）、`ignoreErrors`（字符串/RegExp/谓词）、`skipHandledErrors`（默认 true，跳过 `HttpError` 与 handled/expected 错误；error 插件与 Vue errorHandler 同时生效）
+- `trackApiError({ url, method, status, bizCode, message, durationMs })`：手动上报 `api_request`（success=false, source=manual）
+- collect 上报地址带 `?app_key=`，服务端可对解析失败/超限的请求归因（接入健康）
+
+### 体积
+
+- core.js gzip 5.48 → 6.06 KB（门禁 8 KB）；index.js gzip 14.99 → 17.97 KB；vue/index.js 9.94 → 13.00 KB
+
 ### 文档
 
 - CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语

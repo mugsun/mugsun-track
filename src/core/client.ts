@@ -20,7 +20,9 @@ import { isSampled } from './sampler'
 import { SessionManager } from './session'
 import { TimeEventTracker } from './timeEvent'
 import { Transport } from './transport'
-import { sanitizeProps, uuid } from './utils'
+import { isIgnoredError } from './errorFilter'
+import type { Pinger, SelfCheckReport, SelfCheckRunner } from './selfCheck'
+import { sanitizeProps, truncate, uuid } from './utils'
 
 export interface ClientDeps {
   kv: KeyValueStore
@@ -32,6 +34,25 @@ export interface ClientDeps {
   configFetcher?: ConfigFetcher
   /** DNT 探测，默认false（不启用 DNT 限制）由外层注入真实实现 */
   isDnt?: () => boolean
+  /** selfCheck 连通性探测（GET /track/config，仅带 app_key）；缺省时 ping 项为 warn */
+  ping?: Pinger
+  /**
+   * 自检实现注入（createTracker 默认注入 runSelfCheck）。core 入口不内置，
+   * 保持 core 体积；纯 core 用法可 `import { runSelfCheck } from '@mugsun/track-web'` 后注入
+   */
+  selfCheck?: SelfCheckRunner
+}
+
+/** trackApiError 入参：手动上报一次接口失败（拦截器里业务码非成功、或 HttpError 被 skip 后仍想统计时） */
+export interface ApiErrorParams {
+  url: string
+  method?: string
+  /** HTTP 状态码；业务失败但 HTTP 200 时传 200 */
+  status?: number
+  /** 业务错误码 */
+  bizCode?: string | number
+  message?: string
+  durationMs?: number
 }
 
 export interface ExposureParams {
@@ -65,6 +86,9 @@ export class TrackClient {
   private clock: Clock
   private kv: KeyValueStore
   private transport: Transport
+  private dnt: boolean
+  private ping?: Pinger
+  private selfCheckRunner?: SelfCheckRunner
 
   constructor(options: TrackOptions, deps: ClientDeps) {
     this.options = resolveOptions(options)
@@ -86,8 +110,10 @@ export class TrackClient {
     this.remoteConfig.applyTo(this.options)
 
     this.optedOut = deps.kv.getItem(`${prefix}:${OPTOUT_SUFFIX}`) === '1'
-    const dntBlocked = this.options.respectDnt && (deps.isDnt?.() ?? false)
-    this.disabled = !this.options.enabled || dntBlocked
+    this.dnt = this.options.respectDnt && (deps.isDnt?.() ?? false)
+    this.ping = deps.ping
+    this.selfCheckRunner = deps.selfCheck
+    this.disabled = !this.options.enabled || this.dnt
 
     this.identity = new IdentityManager(deps.kv, `${prefix}:identity`)
     this.session = new SessionManager(deps.kv, `${prefix}:session`, this.options.sessionTimeout)
@@ -138,7 +164,8 @@ export class TrackClient {
    */
   track(event: string, props?: Props, opts?: { eventId?: string }): string | null {
     if (!this.canTrack()) return null
-    const ev = this.buildEvent(event, props, opts?.eventId)
+    const ev = this.applyBeforeSend(this.buildEvent(event, props, opts?.eventId))
+    if (!ev) return null
     this.queue.add(ev)
     // $error 钩子：error 插件、vue errorHandler、手动 track 统一在此出口通知（replay 出错强传）
     if (event === '$error') this.notifyError(ev.props)
@@ -149,7 +176,8 @@ export class TrackClient {
   identify(userId: string | number): void {
     if (!this.canTrack()) return
     this.identity.identify(userId)
-    this.queue.add(this.buildEvent('$identify', { user_id: userId }))
+    const ev = this.applyBeforeSend(this.buildEvent('$identify', { user_id: userId }))
+    if (ev) this.queue.add(ev)
   }
 
   /** 登出/切换账号：清空登录身份、更换 anonymous_id、轮换会话 */
@@ -166,6 +194,49 @@ export class TrackClient {
     )
     // 会话失效通知（此时新会话尚未创建，listeners 收到 null）
     this.notifySessionChange(null)
+  }
+
+  /**
+   * 手动上报接口失败：进正常事件队列，事件名与 api-monitor 一致（api_request，success=false, source=manual），
+   * 服务端接口分析可统一聚合。返回 event_id（未采集返回 null）
+   */
+  trackApiError(p: ApiErrorParams): string | null {
+    return this.track('api_request', {
+      url: truncate(String(p.url ?? ''), 512),
+      method: (p.method ?? 'GET').toUpperCase(),
+      status: p.status ?? 0,
+      duration_ms: p.durationMs,
+      biz_code: p.bizCode === undefined ? undefined : String(p.bizCode),
+      error_message: p.message === undefined ? undefined : truncate(String(p.message), 512),
+      success: false,
+      source: 'manual'
+    })
+  }
+
+  /** 错误是否被 ignoreErrors / skipHandledErrors 过滤（error 插件与 Vue errorHandler 共用） */
+  isIgnoredError(error: unknown, message: string): boolean {
+    return isIgnoredError(this.options, error, message)
+  }
+
+  /** 接入自检（结构化报告，不发送用户数据、不入事件队列）；ping 项会真实请求一次 /track/config */
+  selfCheck(): Promise<SelfCheckReport> {
+    if (!this.selfCheckRunner)
+      return Promise.reject(new Error('[track] selfCheck unavailable: inject deps.selfCheck'))
+    return this.selfCheckRunner(
+      {
+        options: this.options,
+        disabled: this.disabled,
+        dnt: this.dnt,
+        optedOut: this.optedOut,
+        sampled: this.sampled,
+        queueSize: this.queue.size,
+        replayLoaded: this.replay !== null,
+        pluginNames: this.options.plugins.map((p) => p.name)
+      },
+      this.ping,
+      this.clock.now(),
+      SDK_VERSION
+    )
   }
 
   /** timeEvent：开始计时，track 同名事件时自动带 duration_ms */
@@ -300,6 +371,23 @@ export class TrackClient {
 
   private canTrack(): boolean {
     return !this.disabled && !this.optedOut && this.sampled
+  }
+
+  /** beforeSend 钩子：返回 null/false 丢弃；抛错保留原事件 */
+  private applyBeforeSend(ev: TrackEvent): TrackEvent | null {
+    const hook = this.options.beforeSend
+    if (!hook) return ev
+    try {
+      const out = hook(ev)
+      if (out === null || out === false) {
+        this.log(`beforeSend dropped ${ev.event}`)
+        return null
+      }
+      return out && typeof out === 'object' ? out : ev
+    } catch (err) {
+      this.log('beforeSend threw, event kept', err)
+      return ev
+    }
   }
 
   private notifySessionChange(sessionId: string | null): void {

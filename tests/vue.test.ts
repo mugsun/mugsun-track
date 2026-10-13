@@ -4,7 +4,7 @@ import { createApp, defineComponent, h } from 'vue'
 import MugsunTrack, { TRACK_INJECT_KEY, type RouterLike } from '../src/vue/index'
 import { createTrackDirective } from '../src/vue/directive'
 import type { TrackClient } from '../src/core/client'
-import type { TrackPayload } from '../src/types'
+import type { TrackOptions, TrackPayload } from '../src/types'
 import { allEvents, createTestClient, destroyAllClients, type SendRecord } from './helpers'
 
 const sent: SendRecord[] = []
@@ -45,7 +45,10 @@ function makeRouter(): RouterStub {
   return router
 }
 
-function installApp(router?: RouterStub): {
+function installApp(
+  router?: RouterStub,
+  extra: Partial<TrackOptions> = {}
+): {
   app: ReturnType<typeof createApp>
   client: TrackClient
 } {
@@ -55,7 +58,8 @@ function installApp(router?: RouterStub): {
     endpoint: 'https://t.example.com',
     release: '3.1.0',
     fetchRemoteConfig: false,
-    router
+    router,
+    ...extra
   })
   const client = app._context.provides[TRACK_INJECT_KEY as symbol] as TrackClient
   return { app, client }
@@ -102,6 +106,27 @@ describe('Vue 集成', () => {
     expect(ev?.props.vue_info).toBe('setup')
     expect(ev?.props.release).toBe('3.1.0')
     expect(prevCalls).toEqual(['setup'])
+  })
+
+  it('errorHandler 默认跳过 HttpError 与 handled 错误，ignoreErrors 生效；原 handler 仍被调用', async () => {
+    const { app, client } = installApp(undefined, { ignoreErrors: [/ResizeObserver/] })
+    const prevCalls: string[] = []
+    const prev = app.config.errorHandler
+    app.config.errorHandler = (err, instance, info) => {
+      prevCalls.push(info)
+      prev?.(err, instance, info)
+    }
+    const http = Object.assign(new Error('401'), { name: 'HttpError' })
+    app.config.errorHandler(http, null, 'a')
+    app.config.errorHandler(Object.assign(new Error('x'), { handled: true }), null, 'b')
+    app.config.errorHandler(new Error('ResizeObserver loop limit'), null, 'c')
+    app.config.errorHandler(new Error('real'), null, 'd')
+    await client.flush()
+    const msgs = allEvents(sent)
+      .filter((e) => e.event === '$error')
+      .map((e) => e.props.message)
+    expect(msgs).toEqual(['real'])
+    expect(prevCalls).toEqual(['a', 'b', 'c', 'd'])
   })
 
   it('v-track:click 指令', async () => {

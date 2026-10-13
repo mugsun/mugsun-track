@@ -80,6 +80,7 @@ export function install(app: App, options: VueTrackOptions): void {
     try {
       const message = err instanceof Error ? err.message : String(err)
       const stack = err instanceof Error ? err.stack : undefined
+      if (client.isIgnoredError(err, message)) return
       client.track('$error', {
         error_type: 'vue',
         message,

@@ -40,7 +40,10 @@ export function resolveOptions(options: TrackOptions): ResolvedTrackOptions {
     storagePrefix: options.storagePrefix ?? 'mst',
     plugins: options.plugins ?? [],
     fetchRemoteConfig: options.fetchRemoteConfig ?? true,
-    debug: options.debug ?? false
+    debug: options.debug ?? false,
+    beforeSend: options.beforeSend,
+    ignoreErrors: options.ignoreErrors,
+    skipHandledErrors: options.skipHandledErrors ?? true
   }
 }
 
