@@ -4,9 +4,9 @@
 
 ## [Unreleased]
 
-### 计划
+### 变更
 
-- （暂无已定条目）
+- api-monitor：上报 URL 剥离敏感 query（`token` / `access_token` / `authorization` / `id_token` / `refresh_token` 等，大小写不敏感，值替换为 `***`；业务参数保留）。与 [隐私与合规](https://docs.mugsun.com/track/privacy) 对齐；docs 站正文若仍写旧行为需另改 `mugsun-docs`
 
 ## [0.1.1] - 2026-10-12
 

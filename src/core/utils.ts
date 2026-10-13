@@ -63,3 +63,44 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
   }
   return out
 }
+
+
+/** 上报 URL 敏感 query 键（小写归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
+const SENSITIVE_QUERY_KEYS = new Set([
+  'token',
+  'access_token',
+  'authorization',
+  'id_token',
+  'refresh_token',
+  'api_key',
+  'apikey',
+  'auth',
+  'secret',
+  'password'
+])
+
+/**
+ * 剥离 URL 查询串中的敏感键值（大小写不敏感）。
+ * 非法 URL 原样返回；无查询串不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
+ */
+export function redactSensitiveUrl(url: string): string {
+  try {
+    const u = new URL(url, 'https://placeholder.invalid')
+    let changed = false
+    const keys = Array.from(new Set(u.searchParams.keys()))
+    for (const key of keys) {
+      if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+        u.searchParams.set(key, '***')
+        changed = true
+      }
+    }
+    if (!changed) return url
+    // 相对 URL 输入时保留相对形态（去掉占位 origin）
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
+      return `${u.pathname}${u.search}${u.hash}`
+    }
+    return u.href
+  } catch {
+    return url
+  }
+}
