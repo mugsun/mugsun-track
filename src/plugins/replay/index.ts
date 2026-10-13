@@ -16,6 +16,8 @@ import { ReplayRecorder, type ReplayChunkPayload } from './recorder'
 export interface ReplayRecordOptions {
   emit: (event: unknown, isCheckout?: boolean) => void
   maskAllInputs: boolean
+  /** 页面文本遮罩选择器；默认由插件传 '*' */
+  maskTextSelector?: string
   blockSelector: string
   recordCanvas: boolean
   [key: string]: unknown
@@ -35,6 +37,11 @@ export interface ReplayPluginOptions {
   bufferMaxBytes?: number
   /** 单块失败重试次数（指数退避后丢弃），默认 3 */
   maxRetries?: number
+  /**
+   * 页面文本遮罩选择器（rrweb maskTextSelector）。
+   * 默认 '*'（遮全页文本，与隐私文档对齐）；传 false 关闭文本遮罩（仅调试）。
+   */
+  maskTextSelector?: string | false
   /** 测试注入：替代 rrweb.record（不引真实 DOM 录制） */
   record?: ReplayRecordFn
   /** 测试注入：发送实现（默认内置 beacon→fetch→XHR 降级链，独立通道不占事件队列） */
@@ -139,9 +146,12 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
           if (destroyed) return
           stopRecord = record({
             emit: (event) => recorder.push(event),
-            // 隐私默认最严：所有输入值 ***；不动 maskTextSelector（文本不遮罩）；
+            // 隐私默认最严：所有输入值 ***；页面文本默认 maskTextSelector='*'（可显式 false 关闭）；
             // password 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas
             maskAllInputs: true,
+            ...(pluginOpts.maskTextSelector === false
+              ? {}
+              : { maskTextSelector: pluginOpts.maskTextSelector ?? '*' }),
             blockSelector: [ALWAYS_BLOCK, ...options.maskSelectors].join(', '),
             recordCanvas: false
           })

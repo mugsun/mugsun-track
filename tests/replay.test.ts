@@ -331,14 +331,25 @@ describe('replay 插件', () => {
     expect(allEvents(t.sent).map((e) => e.event)).toContain('biz_event')
   })
 
-  it('record 隐私选项：maskAllInputs、blockSelector（内置 + maskSelectors）、不采 canvas、不动文本遮罩', () => {
+  it('record 隐私选项：maskAllInputs、默认 maskTextSelector=*、blockSelector、不采 canvas', () => {
     const { stub } = setup({ maskSelectors: ['.secret'] })
     expect(stub.calls).toHaveLength(1)
     const opts = stub.calls[0]
     expect(opts.maskAllInputs).toBe(true)
+    expect(opts.maskTextSelector).toBe('*')
     expect(opts.blockSelector).toBe('input[type="password"], [data-track-mask], .secret')
     expect(opts.recordCanvas).toBe(false)
-    expect('maskTextSelector' in opts).toBe(false)
+  })
+
+  it('record 可显式关闭文本遮罩（maskTextSelector=false）', () => {
+    const { stub } = setup({}, { maskTextSelector: false })
+    expect(stub.calls).toHaveLength(1)
+    expect('maskTextSelector' in stub.calls[0]).toBe(false)
+  })
+
+  it('record 可自定义 maskTextSelector', () => {
+    const { stub } = setup({}, { maskTextSelector: '.public-ok' })
+    expect(stub.calls[0].maskTextSelector).toBe('.public-ok')
   })
 
   it('会话轮换：旧会话收尾块先发，新会话缓冲与 seq 重置', async () => {

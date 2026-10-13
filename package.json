@@ -1,6 +1,6 @@
 {
   "name": "@mugsun/track-web",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lightweight web tracking SDK for mugsun platform — pageview / web-vitals / error / session replay / visual tracking（mugsun 低代码平台 Web 埋点 SDK）",
   "keywords": [
     "analytics",

@@ -17,7 +17,7 @@
 | 项 | 说明 |
 | --- | --- |
 | 包名 | `@mugsun/track-web` |
-| 版本 | `0.1.1`（仓内；npm 当前仍为 `0.1.0`，待发布） |
+| 版本 | `0.2.0`（仓内；npm 当前仍为 `0.1.0`，待发布） |
 | 运行时 | 浏览器；Node.js ≥ 20（构建与测试） |
 | 许可 | [MIT](./LICENSE) |
 | 文档 | [docs.mugsun.com/track](https://docs.mugsun.com/track/) |
@@ -71,7 +71,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 
 `appKey` 在浏览器端可见，不具备机密性。服务端须通过存在性校验、限流、队列背压与事件校验实施防护。
 
-隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入内容。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
+隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入与页面文本（`maskTextSelector: '*'`，可显式关闭）；`apiBodyMaskEnabled` 默认开启。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
 
 构建门禁：`dist/core.js` gzip 体积不超过 8 KB；当前发布说明中的 core 体积约为 5.5 KB gzip。
 
