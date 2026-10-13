@@ -41,6 +41,8 @@ jobs:
       - if: steps.check.outputs.skip == 'false'
         run: pnpm typecheck && pnpm test && pnpm build
       - if: steps.check.outputs.skip == 'false'
+        name: Upgrade npm (trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+      - if: steps.check.outputs.skip == 'false'
+        name: Publish via npm trusted publishing (OIDC, no token)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
