@@ -121,6 +121,11 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
       const offError = client.onError(() => recorder.forceUpload())
       const onPageHide = () => recorder.flushFinal()
       window.addEventListener('pagehide', onPageHide)
+      // 转后台时页面仍存活：先把缓冲压缩后用 beacon/keepalive 发走，pagehide 只剩少量尾巴
+      const onVisibility = () => {
+        if (document.visibilityState === 'hidden') recorder.flushHidden()
+      }
+      document.addEventListener('visibilitychange', onVisibility)
 
       // 挂载点：供调试/测试手动控制（正常路径由内部钩子自动触发）
       const controller: ReplayController = {
@@ -167,6 +172,7 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
         offSession()
         offError()
         window.removeEventListener('pagehide', onPageHide)
+        document.removeEventListener('visibilitychange', onVisibility)
         if (client.replay === controller) client.replay = null
         recorder.destroy()
       }
@@ -174,5 +180,5 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
   }
 }
 
-export { ReplayRecorder } from './recorder'
+export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_TOTAL_MAX_BYTES, CHUNK_MAX_BYTES } from './recorder'
 export type { ReplayRecorderOptions } from './recorder'
