@@ -8,7 +8,13 @@ import {
   type ReplayPluginOptions,
   type ReplayRecordOptions
 } from '../src/plugins/replay'
-import { ReplayRecorder, type ReplayChunkPayload } from '../src/plugins/replay/recorder'
+import {
+  CHUNK_MAX_BYTES,
+  FINAL_CHUNK_MAX_BYTES,
+  FINAL_WIRE_BUDGET,
+  ReplayRecorder,
+  type ReplayChunkPayload
+} from '../src/plugins/replay/recorder'
 import type { TrackOptions, TrackPlugin } from '../src/types'
 import { allEvents, createTestClient, destroyAllClients } from './helpers'
 
@@ -20,6 +26,14 @@ afterEach(() => destroyAllClients())
 function fakeEvent(id: number, ts: number) {
   return { type: 3, timestamp: ts, data: { source: 1, id } }
 }
+
+/** 带填充的大事件：JSON 约 bytes 字节 */
+function bigEvent(id: number, ts: number, bytes: number) {
+  return { type: 3, timestamp: ts, data: { source: 1, id, pad: 'x'.repeat(bytes) } }
+}
+
+/** 与 transport 一致的 beacon 阈值（sendBeacon 硬限 64KB，留余量 60KB） */
+const BEACON_LIMIT = 60 * 1024
 
 /** 假 gzip：加 'GZIP:' 前缀模拟压缩（decodeChunk 对称还原） */
 const fakeGzip = async (body: string): Promise<ArrayBuffer> =>
@@ -221,6 +235,181 @@ describe('replay 分块与重试', () => {
 
 // ---------------------------------------------------------------- 插件集成（client + 钩子）
 
+describe('replay 收尾块拆分（pagehide / 转后台）', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  function makeRecorder() {
+    const cap = captureSend()
+    const logs: string[] = []
+    const rec = new ReplayRecorder({
+      appKey: 'app',
+      uploadEnabled: true,
+      send: cap.send,
+      gzip: fakeGzip,
+      eventsPerChunk: 10_000,
+      log: (...a: unknown[]) => logs.push(String(a[0]))
+    })
+    rec.bindSession('s1', true)
+    return { rec, logs, ...cap }
+  }
+
+  it('pagehide：剩余缓冲拆块，合计请求体 ≤ 44KB，seq 连续、事件按序且从最早开始', () => {
+    const { rec, calls } = makeRecorder()
+    for (let i = 0; i < 8; i++) rec.push(bigEvent(i, i, 10 * 1024))
+    rec.flushFinal()
+    expect(calls.length).toBeGreaterThan(0)
+    for (const c of calls) {
+      expect(c.preferBeacon).toBe(true)
+      expect(c.payload.gzip).toBe(false)
+      expect(byteLength(JSON.stringify(c.payload))).toBeLessThan(BEACON_LIMIT)
+    }
+    expect(calls.map((c) => c.payload.seq)).toEqual(calls.map((_, i) => i))
+    const ids = calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))
+    expect(ids).toEqual(ids.map((_, i) => i))
+    expect(ids.length).toBe(3)
+    const wire = calls.reduce((n, c) => n + byteLength(JSON.stringify(c.payload)), 0)
+    expect(wire).toBeLessThanOrEqual(FINAL_WIRE_BUDGET)
+  })
+
+  it('pagehide：预算用尽后的块不做 base64 / JSON 拼接（预检估算）', () => {
+    const { rec, calls } = makeRecorder()
+    for (let i = 0; i < 20; i++) rec.push(bigEvent(i, i, 10 * 1024))
+    const spy = vi.spyOn(globalThis, 'btoa')
+    rec.flushFinal()
+    expect(calls).toHaveLength(1)
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
+
+  it('预算取值：44KB 在 40–48KB 区间，单块上限加信封不超预算', () => {
+    expect(FINAL_WIRE_BUDGET).toBeGreaterThanOrEqual(40 * 1024)
+    expect(FINAL_WIRE_BUDGET).toBeLessThanOrEqual(48 * 1024)
+    expect(4 * Math.ceil(FINAL_CHUNK_MAX_BYTES / 3) + 300).toBeLessThanOrEqual(FINAL_WIRE_BUDGET)
+  })
+
+  it('pagehide：总量超出卸载期额度时保留最早事件，丢弃其余并记日志', () => {
+    const { rec, calls, logs } = makeRecorder()
+    for (let i = 0; i < 30; i++) rec.push(bigEvent(i, i, 10 * 1024))
+    rec.flushFinal()
+    const ids = calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))
+    const wire = calls.reduce((n, c) => n + byteLength(JSON.stringify(c.payload)), 0)
+    expect(wire).toBeLessThanOrEqual(FINAL_WIRE_BUDGET)
+    expect(ids[0]).toBe(0)
+    expect(ids).toEqual(ids.map((_, i) => i))
+    expect(ids.length).toBeLessThan(30)
+    expect(logs.some((l) => l.includes('丢弃'))).toBe(true)
+  })
+
+  it('pagehide：单条超过 beacon 限额的事件丢弃，不发必被拒的块', () => {
+    const { rec, calls } = makeRecorder()
+    rec.push(fakeEvent(1, 1))
+    rec.push(bigEvent(2, 2, FINAL_CHUNK_MAX_BYTES + 100))
+    rec.flushFinal()
+    const ids = calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))
+    expect(ids).toEqual([1])
+    for (const c of calls) expect(byteLength(JSON.stringify(c.payload))).toBeLessThan(BEACON_LIMIT)
+  })
+
+  it('转后台：剩余缓冲走 gzip 管道，以 beacon/keepalive（preferBeacon）发出，pagehide 不再重复发', async () => {
+    const { rec, calls } = makeRecorder()
+    for (let i = 0; i < 5; i++) rec.push(fakeEvent(i, i))
+    rec.flushHidden()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].preferBeacon).toBe(true)
+    expect(calls[0].payload.gzip).toBe(true)
+    expect(decodeChunk(calls[0].payload).map((e) => e.data.id)).toEqual([0, 1, 2, 3, 4])
+    rec.flushFinal()
+    expect(calls).toHaveLength(1)
+  })
+
+  it('pagehide：所有收尾块合计请求体 ≤ 44KB（与普通事件收尾 beacon 共用约 64KB 额度），不只是单块', () => {
+    const { rec, calls } = makeRecorder()
+    // 每条约 30KB：旧实现首块后预算仍 > 0，会再发一块，合计远超 64KB
+    for (let i = 0; i < 6; i++) rec.push(bigEvent(i, i, 30 * 1024))
+    rec.flushFinal()
+    const wire = calls.reduce((n, c) => n + byteLength(JSON.stringify(c.payload)), 0)
+    expect(wire).toBeLessThanOrEqual(FINAL_WIRE_BUDGET)
+    expect(calls.length).toBe(1)
+    expect(decodeChunk(calls[0].payload).map((e) => e.data.id)).toEqual([0])
+  })
+
+  it('转后台后 gzip 未完成就卸载：同步明文接管、沿用原 seq，gzip 完成后不再发（不双发）', async () => {
+    let release: () => void = () => {}
+    const slowGzip = (body: string) =>
+      new Promise<ArrayBuffer>((resolve) => {
+        release = () => resolve(new TextEncoder().encode(`GZIP:${body}`).buffer as ArrayBuffer)
+      })
+    const cap = captureSend()
+    const rec = new ReplayRecorder({
+      appKey: 'app',
+      uploadEnabled: true,
+      send: cap.send,
+      gzip: slowGzip,
+      eventsPerChunk: 10_000
+    })
+    rec.bindSession('s1', true)
+    for (let i = 0; i < 3; i++) rec.push(fakeEvent(i, i))
+    rec.flushHidden()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cap.calls).toHaveLength(0)
+    rec.push(fakeEvent(3, 3))
+    rec.flushFinal()
+    expect(cap.calls.map((c) => [c.payload.seq, c.payload.gzip])).toEqual([
+      [0, false],
+      [1, false]
+    ])
+    expect(cap.calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))).toEqual([0, 1, 2, 3])
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cap.calls).toHaveLength(2)
+  })
+
+  it('转后台块已压缩但还排在队里：pagehide 直接 beacon 发出压缩块', async () => {
+    const cap = captureSend()
+    let first = true
+    const send = async (p: ReplayChunkPayload, o: { preferBeacon: boolean }) => {
+      // 第一块一直在途，后面的转后台块只能排队
+      if (first) {
+        first = false
+        cap.calls.push({ payload: p, preferBeacon: o.preferBeacon })
+        return new Promise<boolean>(() => {})
+      }
+      return cap.send(p, o)
+    }
+    const rec = new ReplayRecorder({ appKey: 'app', uploadEnabled: true, send, gzip: fakeGzip, eventsPerChunk: 2 })
+    rec.bindSession('s1', true)
+    rec.push(fakeEvent(0, 0))
+    rec.push(fakeEvent(1, 1)) // 满 2 条切普通块 seq0，发出后一直在途
+    await vi.advanceTimersByTimeAsync(0)
+    rec.push(fakeEvent(2, 2))
+    rec.flushHidden() // seq1 压缩后排队
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cap.calls).toHaveLength(1)
+    rec.flushFinal()
+    expect(cap.calls).toHaveLength(2)
+    expect(cap.calls[1].payload.seq).toBe(1)
+    expect(cap.calls[1].payload.gzip).toBe(true)
+    expect(cap.calls[1].preferBeacon).toBe(true)
+  })
+
+  it('普通切块也按服务端单块上限拆分（明文 ≤1MB）', async () => {
+    const { rec, calls } = makeRecorder()
+    for (let i = 0; i < 3; i++) rec.push(bigEvent(i, i, 600 * 1024))
+    rec.forceUpload()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(calls.length).toBe(3)
+    for (const c of calls) {
+      expect(c.preferBeacon).toBe(false)
+      expect(atob(c.payload.payload).length - 'GZIP:'.length).toBeLessThanOrEqual(CHUNK_MAX_BYTES)
+    }
+    expect(calls.map((c) => c.payload.seq)).toEqual([0, 1, 2])
+  })
+})
+
 describe('replay 插件', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
@@ -320,6 +509,20 @@ describe('replay 插件', () => {
     expect(decodeChunk(cap.calls[0].payload).map((e) => e.data.id)).toEqual([0, 1, 2, 3, 4])
   })
 
+  it('visibilitychange → hidden 触发转后台发送（gzip + preferBeacon）', async () => {
+    const { t, cap, stub } = setup()
+    t.client.track('boot')
+    for (let i = 0; i < 3; i++) stub.emit(fakeEvent(i, i))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new window.Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+    expect(cap.calls).toHaveLength(1)
+    expect(cap.calls[0].preferBeacon).toBe(true)
+    expect(cap.calls[0].payload.gzip).toBe(true)
+    expect(cap.calls[0].payload.event_count).toBe(3)
+  })
+
   it('回放发送持续失败不阻塞事件主队列', async () => {
     const { t, stub } = setup({}, { send: async () => false })
     t.client.track('boot')
@@ -339,6 +542,14 @@ describe('replay 插件', () => {
     expect(opts.maskTextSelector).toBe('*')
     expect(opts.blockSelector).toBe('input[type="password"], [data-track-mask], .secret')
     expect(opts.recordCanvas).toBe(false)
+  })
+
+  it('record 默认每 3 分钟全量快照（rrweb checkoutEveryNms），可自定义或关闭', () => {
+    expect(setup().stub.calls[0].checkoutEveryNms).toBe(180_000)
+    destroyAllClients()
+    expect(setup({}, { checkoutEveryNms: 60_000 }).stub.calls[0].checkoutEveryNms).toBe(60_000)
+    destroyAllClients()
+    expect('checkoutEveryNms' in setup({}, { checkoutEveryNms: false }).stub.calls[0]).toBe(false)
   })
 
   it('record 可显式关闭文本遮罩（maskTextSelector=false）', () => {

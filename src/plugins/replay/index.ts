@@ -20,6 +20,8 @@ export interface ReplayRecordOptions {
   maskTextSelector?: string
   blockSelector: string
   recordCanvas: boolean
+  /** rrweb 定时全量快照间隔（ms）；见 ReplayPluginOptions.checkoutEveryNms */
+  checkoutEveryNms?: number
   [key: string]: unknown
 }
 
@@ -38,6 +40,11 @@ export interface ReplayPluginOptions {
   /** 单块失败重试次数（指数退避后丢弃），默认 3 */
   maxRetries?: number
   /**
+   * 定时全量快照间隔 ms（rrweb 内置 `checkoutEveryNms`），默认 180000（3 分钟）；传 false 关闭。
+   * 中间某块丢失（收尾额度不够、重试耗尽）时，播放器可以从下一个全量快照接着播，而不是一直错到结尾。
+   */
+  checkoutEveryNms?: number | false
+  /**
    * 页面文本遮罩选择器（rrweb maskTextSelector）。
    * 默认 '*'（遮全页文本，与隐私文档对齐）；传 false 关闭文本遮罩（仅调试）。
    */
@@ -49,6 +56,9 @@ export interface ReplayPluginOptions {
   /** 测试注入：gzip 实现；传 null 强制走明文降级路径 */
   gzip?: ((body: string) => Promise<ArrayBuffer>) | null
 }
+
+/** 默认每 3 分钟一次全量快照（rrweb checkoutEveryNms） */
+export const DEFAULT_CHECKOUT_EVERY_MS = 3 * 60 * 1000
 
 /** 内置整块屏蔽：password 与平台统一敏感标记（与自动采集同一口径） */
 const ALWAYS_BLOCK = 'input[type="password"], [data-track-mask]'
@@ -121,6 +131,11 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
       const offError = client.onError(() => recorder.forceUpload())
       const onPageHide = () => recorder.flushFinal()
       window.addEventListener('pagehide', onPageHide)
+      // 转后台时页面仍存活：先把缓冲压缩后用 beacon/keepalive 发走，pagehide 只剩少量尾巴
+      const onVisibility = () => {
+        if (document.visibilityState === 'hidden') recorder.flushHidden()
+      }
+      document.addEventListener('visibilitychange', onVisibility)
 
       // 挂载点：供调试/测试手动控制（正常路径由内部钩子自动触发）
       const controller: ReplayController = {
@@ -153,7 +168,10 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
               ? {}
               : { maskTextSelector: pluginOpts.maskTextSelector ?? '*' }),
             blockSelector: [ALWAYS_BLOCK, ...options.maskSelectors].join(', '),
-            recordCanvas: false
+            recordCanvas: false,
+            ...(pluginOpts.checkoutEveryNms === false
+              ? {}
+              : { checkoutEveryNms: pluginOpts.checkoutEveryNms ?? DEFAULT_CHECKOUT_EVERY_MS })
           })
         } catch (err) {
           log('replay 启动失败', err)
@@ -167,6 +185,7 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
         offSession()
         offError()
         window.removeEventListener('pagehide', onPageHide)
+        document.removeEventListener('visibilitychange', onVisibility)
         if (client.replay === controller) client.replay = null
         recorder.destroy()
       }
@@ -174,5 +193,5 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
   }
 }
 
-export { ReplayRecorder } from './recorder'
+export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_WIRE_BUDGET, CHUNK_MAX_BYTES } from './recorder'
 export type { ReplayRecorderOptions } from './recorder'
