@@ -13,7 +13,7 @@
 
 ### 修复
 
-- 回放收尾块丢失：pagehide 时原来把剩余缓冲（最多 10MB）合成一个明文块用 beacon 发出，超过 sendBeacon 的 64KB 限额或服务端单块上限（明文约 1.07MB）就整块丢失。现在：① 页面转后台（`visibilitychange → hidden`）时先把缓冲走 gzip 管道，以 beacon / fetch keepalive 发出，移动端切后台也能覆盖；② pagehide 剩余部分按 44KB 明文拆块，每块都低于 beacon 限额，卸载期总量上限约 88KB，超出部分丢弃最晚的事件并记日志；③ 普通切块也按 1MB 明文拆分，避免触发服务端的 413
+- 回放收尾块丢失：pagehide 时原来把剩余缓冲（最多 10MB）合成一个明文块用 beacon 发出，超过 sendBeacon 的 64KB 限额或服务端单块上限（明文约 1.07MB）就整块丢失。现在：① 页面转后台（`visibilitychange → hidden`）时先把缓冲走 gzip 管道，以 beacon / fetch keepalive 发出，移动端切后台也能覆盖；② pagehide 剩余部分按 32KB 明文拆块；sendBeacon 与 fetch keepalive 共用每个文档约 64KB 的在途额度，pagehide 时普通事件的收尾 beacon 和仍在途的回放块也占这份额度，所以回放收尾块合计请求体不超过 44KB，第一块放不下即停止，丢弃更晚的事件并记日志（放不下的块先按字节估算，不做 base64 编码）；转后台块的 gzip 还没完成页面就卸载时，改为同步明文发出（沿用原 seq），压缩结果作废，不会重复发送；③ 普通切块也按 1MB 明文拆分，避免触发服务端的 413
 - 错误堆栈：`sanitizeProps` 对顶层 `stack` 放宽到 4096 字符，与 error 插件的截断和服务端（mugsun-boot `PROPS_STACK_MAX_LEN`）一致。之前所有字符串一律截到 1024，`$error` 的堆栈实际只剩 1024 字符；其它字符串属性仍是 1024
 
 - endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`

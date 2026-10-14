@@ -180,5 +180,5 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
   }
 }
 
-export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_TOTAL_MAX_BYTES, CHUNK_MAX_BYTES } from './recorder'
+export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_WIRE_BUDGET, CHUNK_MAX_BYTES } from './recorder'
 export type { ReplayRecorderOptions } from './recorder'

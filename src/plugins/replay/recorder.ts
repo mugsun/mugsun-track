@@ -55,16 +55,28 @@ interface OutboxChunk {
   urgent: boolean
 }
 
+/** 转后台块的编码凭据：gzip 未完成前页面就卸载时，flushFinal 接管其事件同步明文发出并作废凭据 */
+interface PendingUrgent {
+  items: BufItem[]
+  seq: number
+  /** true = 已被 flushFinal 接管，gzip 完成后不得再入 outbox（防双发） */
+  superseded: boolean
+}
+
 /**
- * pagehide 收尾块单块明文上限（JSON 字节）。base64 膨胀 4/3 后约 58.7KB，加信封仍低于
- * transport 的 beacon 阈值 60KB（sendBeacon 硬限 64KB），保证每块都能走 beacon。
+ * pagehide 收尾总预算（请求体字节，即 JSON.stringify(payload) 的 UTF-8 长度）：sendBeacon 与
+ * fetch keepalive 共用每个文档约 64KB 的在途额度，而 pagehide 时普通事件队列的收尾 beacon、
+ * 以及可能仍在途的回放块也占这份额度，回放收尾只取 44KB。
+ * 按 seq 顺序发送，第一块放不下即停止，后面的全部丢弃（保留最早的事件、不在中间留空洞）。
  */
-export const FINAL_CHUNK_MAX_BYTES = 44 * 1024
+export const FINAL_WIRE_BUDGET = 44 * 1024
 /**
- * pagehide 收尾总预算（明文 JSON 字节）：浏览器给卸载期 beacon 与 fetch keepalive 各约 64KB 在途额度，
- * 超出部分无论怎么发都送不出去。按时间顺序保留最早的事件（rrweb 增量依赖前序事件），其余丢弃并记日志。
+ * pagehide 收尾块单块明文上限（JSON 字节）：base64 膨胀 4/3 后约 42.7KB，加信封仍在
+ * FINAL_WIRE_BUDGET 内，单块总能放进预算。
  */
-export const FINAL_TOTAL_MAX_BYTES = 2 * FINAL_CHUNK_MAX_BYTES
+export const FINAL_CHUNK_MAX_BYTES = 32 * 1024
+/** 收尾块信封（app_key/session_id/seq/event_count/gzip 等字段名与引号）估算余量 */
+const ENVELOPE_OVERHEAD = 160
 /**
  * 普通/后台块单块明文上限（JSON 字节）：服务端 base64 上限 1,442,802 字符（≈1.08MB 原文），
  * gzip 失败降级明文时也不能超；压缩时再受服务端解压上限 4MB 约束，取 1MB 两者都满足。
@@ -125,6 +137,7 @@ export class ReplayRecorder {
   private forced = false
 
   private outbox: OutboxChunk[] = []
+  private pendingUrgent: PendingUrgent[] = []
   private pumping = false
   private encodeChain: Promise<void> = Promise.resolve()
   private intervalTimer: ReturnType<typeof setInterval> | null = null
@@ -225,38 +238,39 @@ export class ReplayRecorder {
     if (this.stopped || !this.opts.canRecord() || !this.selected()) return
     if (this.buf.length === 0) return
     for (const group of splitByBytes(this.takeAll(), CHUNK_MAX_BYTES)) {
-      this.enqueue(group, true)
+      const token: PendingUrgent = { items: group, seq: this.seq, superseded: false }
+      this.pendingUrgent.push(token)
+      this.enqueue(group, true, token)
     }
   }
 
   /**
-   * pagehide 收尾块：同步明文编码（gzip 是异步流，活不过卸载；gzip:false 标记告知服务端），
-   * 一次性直发，不进重试管道（卸载场景重试无意义）。按 FINAL_CHUNK_MAX_BYTES 拆块，每块都在 beacon
-   * 限额内；总量超过 FINAL_TOTAL_MAX_BYTES 的部分送不出去，丢弃最晚的并记日志。
-   * 正常情况下 visibilitychange 已先把缓冲压缩发走，这里只剩切后台到卸载之间的少量事件。
+   * pagehide 收尾：全部同步发出，不进重试管道（卸载场景重试无意义），按 seq 顺序：
+   * ① outbox 里已压缩好、尚未发出的转后台块，直接 beacon；
+   * ② 转后台块 gzip 还没完成的：作废其凭据（gzip 完成后不再入队，防双发），事件改为同步明文发出，
+   *    放得进一块时沿用原 seq，否则重新编号（原 seq 留空洞，播放器跳过）；
+   * ③ 缓冲剩余事件，明文按 FINAL_CHUNK_MAX_BYTES 拆块。
+   * 所有块合计请求体不超过 FINAL_WIRE_BUDGET（beacon / keepalive 共用约 64KB 额度），
+   * 第一块放不下即停止，其余丢弃并记日志。
    */
   flushFinal(): void {
     if (this.stopped || !this.opts.canRecord() || !this.selected()) return
-    if (this.buf.length === 0) return
-    const items = this.takeAll()
-    let budget = FINAL_TOTAL_MAX_BYTES
+    let budget = FINAL_WIRE_BUDGET
     let dropped = 0
-    for (const group of splitByBytes(items, FINAL_CHUNK_MAX_BYTES)) {
-      const bytes = group.reduce((n, i) => n + i.len, 0)
-      // 单条超出 beacon 限额的事件（如大 DOM 全量快照）：卸载期无法送达，丢弃
-      if (budget <= 0 || bytes > FINAL_CHUNK_MAX_BYTES) {
-        dropped += group.length
-        continue
+    let full = false
+    /** 预检：按估算的请求体大小判断还放不放得下；放不下即进入「已满」，后续块都不再编码 */
+    const fits = (estimate: number): boolean => {
+      if (full || estimate > budget) full = true
+      return !full
+    }
+    const fire = (payload: ReplayChunkPayload): void => {
+      const wire = byteLength(JSON.stringify(payload))
+      if (full || wire > budget) {
+        full = true
+        dropped += payload.event_count
+        return
       }
-      budget -= bytes
-      const payload: ReplayChunkPayload = {
-        app_key: this.opts.appKey,
-        session_id: this.sessionId as string,
-        seq: this.seq++,
-        event_count: group.length,
-        gzip: false,
-        payload: base64FromString(`[${group.map((i) => i.json).join(',')}]`)
-      }
+      budget -= wire
       try {
         void this.opts.send(payload, { preferBeacon: true }).catch(() => {
           // beacon 失败不再降级重试：页面正在卸载
@@ -265,7 +279,68 @@ export class ReplayRecorder {
         // 发送实现同步异常忽略
       }
     }
+
+    // ① 已编码未发出的转后台块（在途的队首块不动，避免重复）
+    // 普通块留在 outbox：pagehide 也可能进 bfcache，页面恢复后照常重试
+    const inFlight = this.pumping ? this.outbox[0] : undefined
+    const ready = this.outbox.filter((c) => c.urgent && c !== inFlight)
+    this.outbox = this.outbox.filter((c) => !ready.includes(c))
+    for (const c of ready) fire(c.payload)
+
+    // ② gzip 未完成的转后台块：接管为明文
+    const late = this.pendingUrgent.splice(0)
+    for (const token of late) {
+      token.superseded = true
+      const groups = splitByBytes(token.items, FINAL_CHUNK_MAX_BYTES)
+      groups.forEach((group, i) => {
+        this.sendPlain(group, groups.length === 1 && i === 0 ? token.seq : this.seq++, fits, fire, (n) => {
+          dropped += n
+        })
+      })
+    }
+
+    // ③ 缓冲剩余
+    if (this.buf.length > 0) {
+      for (const group of splitByBytes(this.takeAll(), FINAL_CHUNK_MAX_BYTES)) {
+        this.sendPlain(group, this.seq++, fits, fire, (n) => {
+          dropped += n
+        })
+      }
+    }
     if (dropped > 0) this.log(`replay 收尾超出卸载期发送额度，丢弃 ${dropped} 条事件`)
+  }
+
+  /**
+   * 明文成块交给 fire。先用字节数估算请求体（base64 = 4·⌈n/3⌉ + 信封），预算已满或放不下时
+   * 直接丢弃，不做 base64 和 JSON 拼接（卸载期主线程时间宝贵）；单条超出单块上限的事件
+   * （如大 DOM 全量快照）卸载期无法送达，同样丢弃。
+   */
+  private sendPlain(
+    group: BufItem[],
+    seq: number,
+    fits: (estimate: number) => boolean,
+    fire: (p: ReplayChunkPayload) => void,
+    drop: (n: number) => void
+  ): void {
+    const raw = group.reduce((n, i) => n + i.len, 0) + group.length + 1
+    if (raw > FINAL_CHUNK_MAX_BYTES) {
+      drop(group.length)
+      return
+    }
+    const sid = this.sessionId as string
+    const estimate = 4 * Math.ceil(raw / 3) + byteLength(this.opts.appKey) + byteLength(sid) + ENVELOPE_OVERHEAD
+    if (!fits(estimate)) {
+      drop(group.length)
+      return
+    }
+    fire({
+      app_key: this.opts.appKey,
+      session_id: this.sessionId as string,
+      seq,
+      event_count: group.length,
+      gzip: false,
+      payload: base64FromString(`[${group.map((i) => i.json).join(',')}]`)
+    })
   }
 
   destroy(): void {
@@ -277,6 +352,7 @@ export class ReplayRecorder {
     this.buf = []
     this.bufBytes = 0
     this.outbox = []
+    this.pendingUrgent = []
   }
 
   // ---------------------------------------------------------------- internal
@@ -322,13 +398,18 @@ export class ReplayRecorder {
   }
 
   /** 一组事件成块：seq 在此时分配；编码串行入链，保证 outbox 顺序与 seq 一致 */
-  private enqueue(items: BufItem[], urgent: boolean): void {
+  private enqueue(items: BufItem[], urgent: boolean, token?: PendingUrgent): void {
     const sessionId = this.sessionId as string
     const seq = this.seq++
     const jsons = items.map((i) => i.json)
     this.encodeChain = this.encodeChain
       .then(() => this.encodeChunk(jsons, sessionId, seq))
       .then((payload) => {
+        if (token) {
+          // 已被 pagehide 接管（明文发出）：丢弃压缩结果，防双发
+          if (token.superseded) return
+          this.pendingUrgent = this.pendingUrgent.filter((t) => t !== token)
+        }
         if (this.stopped) return
         this.outbox.push({ payload, attempts: 0, urgent })
         this.pump()
