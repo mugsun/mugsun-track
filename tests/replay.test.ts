@@ -454,6 +454,14 @@ describe('replay 插件', () => {
     expect(opts.recordCanvas).toBe(false)
   })
 
+  it('record 默认每 3 分钟全量快照（rrweb checkoutEveryNms），可自定义或关闭', () => {
+    expect(setup().stub.calls[0].checkoutEveryNms).toBe(180_000)
+    destroyAllClients()
+    expect(setup({}, { checkoutEveryNms: 60_000 }).stub.calls[0].checkoutEveryNms).toBe(60_000)
+    destroyAllClients()
+    expect('checkoutEveryNms' in setup({}, { checkoutEveryNms: false }).stub.calls[0]).toBe(false)
+  })
+
   it('record 可显式关闭文本遮罩（maskTextSelector=false）', () => {
     const { stub } = setup({}, { maskTextSelector: false })
     expect(stub.calls).toHaveLength(1)
