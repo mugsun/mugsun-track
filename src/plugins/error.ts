@@ -1,5 +1,5 @@
 import type { PluginContext, Props, TrackPlugin } from '../types'
-import { hashHex, truncate } from '../core/utils'
+import { hashHex, stripStackUrlQuery, truncate } from '../core/utils'
 
 /** 堆栈首帧：第一条带 URL 的堆栈行归一化（去行列号），与 message 一起生成指纹 */
 export function firstFrame(stack: string | undefined): string {
@@ -13,7 +13,8 @@ export function firstFrame(stack: string | undefined): string {
 
 /** 错误指纹 = message + 堆栈首帧 哈希，服务端按 fingerprint 分组聚合 */
 export function fingerprintOf(message: string, stack?: string): string {
-  return hashHex(`${message}|${firstFrame(stack)}`)
+  // 帧 URL 的 query（token、签名）每次不同，先去掉，保证同一错误指纹稳定
+  return hashHex(`${message}|${firstFrame(stack ? stripStackUrlQuery(stack) : stack)}`)
 }
 
 /**
@@ -30,7 +31,7 @@ export function errorPlugin(): TrackPlugin {
       const report = (props: Props, error?: unknown) => {
         if (client.isIgnoredError(error, String(props.message ?? ''))) return
         const message = truncate(String(props.message ?? 'unknown'), 512)
-        const stack = props.stack ? truncate(String(props.stack), 4096) : undefined
+        const stack = props.stack ? truncate(stripStackUrlQuery(String(props.stack)), 4096) : undefined
         client.track('$error', {
           ...props,
           message,

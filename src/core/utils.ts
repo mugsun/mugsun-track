@@ -33,8 +33,37 @@ export function stableStringify(value: unknown): string {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`
 }
 
+/** 按 UTF-16 码元截断，不拆代理对（截断点落在高位代理之后时再退一位，避免产生孤立代理） */
 export function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max) : str
+  if (str.length <= max) return str
+  let end = max
+  const c = str.charCodeAt(end - 1)
+  if (end > 0 && c >= 0xd800 && c <= 0xdbff) end--
+  return str.slice(0, end)
+}
+
+/** 按 UTF-8 字节截断，不拆字符（码点为单位） */
+export function truncateBytes(str: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ''
+  let bytes = 0
+  let i = 0
+  for (const ch of str) {
+    const cp = ch.codePointAt(0) as number
+    const n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4
+    if (bytes + n > maxBytes) break
+    bytes += n
+    i += ch.length
+  }
+  return str.slice(0, i)
+}
+
+/**
+ * 堆栈帧 URL 去掉 query / hash（常带 token、签名），保留末尾的 :行:列。
+ * 例：`https://cdn.x/app.js?token=abc:10:5` → `https://cdn.x/app.js:10:5`
+ */
+const STACK_URL_QUERY_RE = /(\b[a-z][\w+.-]*:\/\/[^\s?#()]*)[?#][^\s()]*?(:\d+(?::\d+)?)?(?=[\s()]|$)/gi
+export function stripStackUrlQuery(stack: string): string {
+  return stack.replace(STACK_URL_QUERY_RE, (_m, base: string, pos?: string) => base + (pos ?? ''))
 }
 
 /** 自定义事件名白名单（$ 为服务端保留字；远端圈选规则过滤与圈选面板校验共用） */
@@ -58,7 +87,13 @@ export const PROP_VALUE_MAX_LEN = 1024
 /** 顶层 stack（错误堆栈）上限：与服务端 PROPS_STACK_MAX_LEN 一致 */
 export const PROP_STACK_MAX_LEN = 4096
 
-/** 属性清洗：键 ≤64、字符串值 ≤1024（顶层 stack ≤4096），剔除 undefined（服务端再做深度/总量截断） */
+/** 单事件 props 总量上限（JSON UTF-8 字节）：与服务端 PROPS_TOTAL_MAX_BYTES 一致 */
+export const PROPS_TOTAL_MAX_BYTES = 16384
+
+/**
+ * 属性清洗：键 ≤64、字符串值 ≤1024（顶层 stack ≤4096，且去掉帧 URL 的 query），剔除 undefined。
+ * 总量超过 16KB 时**先缩 stack**（按字节，不拆字符），仍超再由服务端从尾部摘键。
+ */
 export function sanitizeProps(props: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(props)) {
@@ -66,8 +101,29 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
     const key = truncate(k, 64)
     out[key] =
       typeof v === 'string'
-        ? truncate(v, key === 'stack' ? PROP_STACK_MAX_LEN : PROP_VALUE_MAX_LEN)
+        ? key === 'stack'
+          ? truncate(stripStackUrlQuery(v), PROP_STACK_MAX_LEN)
+          : truncate(v, PROP_VALUE_MAX_LEN)
         : v
+  }
+  if (typeof out.stack === 'string' && out.stack) {
+    let size: number
+    try {
+      size = byteLength(JSON.stringify(out))
+    } catch {
+      return out
+    }
+    if (size > PROPS_TOTAL_MAX_BYTES) {
+      const stack = out.stack as string
+      // JSON 转义使字节数 ≥ 原文：按超出量缩，再复核一次（转义字符多时再退）
+      let target = byteLength(stack) - (size - PROPS_TOTAL_MAX_BYTES)
+      for (let i = 0; i < 3; i++) {
+        out.stack = truncateBytes(stack, target)
+        const now = byteLength(JSON.stringify(out))
+        if (now <= PROPS_TOTAL_MAX_BYTES || target <= 0) break
+        target -= now - PROPS_TOTAL_MAX_BYTES
+      }
+    }
   }
   return out
 }
