@@ -13,6 +13,8 @@
 
 ### 修复
 
+- 错误堆栈：`sanitizeProps` 对顶层 `stack` 放宽到 4096 字符，与 error 插件的截断和服务端（mugsun-boot `PROPS_STACK_MAX_LEN`）一致。之前所有字符串一律截到 1024，`$error` 的堆栈实际只剩 1024 字符；其它字符串属性仍是 1024
+
 - endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`
 
 ### 新增
