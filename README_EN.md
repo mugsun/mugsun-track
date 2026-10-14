@@ -17,8 +17,8 @@ This repository publishes a browser analytics SDK. Collection, storage, and dash
 | Item | Detail |
 | --- | --- |
 | Package | `@mugsun/track-web` |
-| Version | `0.2.0` (repo tip; npm still `0.1.0` until publish) |
-| Runtime | Browser; Node.js ≥ 20 for build and test |
+| Version | `0.2.0` (published on npm as `@mugsun/track-web@0.2.0`) |
+| Runtime | Browser; Node.js ≥ 22.13 and pnpm ≥ 11.11 for build and test (see `engines` / `packageManager` in package.json) |
 | License | [MIT](./LICENSE) |
 | Docs | [docs.mugsun.com/en/track](https://docs.mugsun.com/en/track/) |
 
