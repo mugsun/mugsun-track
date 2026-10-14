@@ -53,13 +53,21 @@ export function safeParse<T>(raw: string | null): T | null {
   }
 }
 
-/** 属性清洗：键 ≤64、字符串值 ≤1024，剔除 undefined（服务端再做深度/总量截断） */
+/** 字符串属性值上限 */
+export const PROP_VALUE_MAX_LEN = 1024
+/** 顶层 stack（错误堆栈）上限：与服务端 PROPS_STACK_MAX_LEN 一致 */
+export const PROP_STACK_MAX_LEN = 4096
+
+/** 属性清洗：键 ≤64、字符串值 ≤1024（顶层 stack ≤4096），剔除 undefined（服务端再做深度/总量截断） */
 export function sanitizeProps(props: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(props)) {
     if (v === undefined) continue
     const key = truncate(k, 64)
-    out[key] = typeof v === 'string' ? truncate(v, 1024) : v
+    out[key] =
+      typeof v === 'string'
+        ? truncate(v, key === 'stack' ? PROP_STACK_MAX_LEN : PROP_VALUE_MAX_LEN)
+        : v
   }
   return out
 }

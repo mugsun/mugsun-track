@@ -185,6 +185,18 @@ describe('身份与客户端行为', () => {
     expect('gone' in (ev?.props ?? {})).toBe(false)
   })
 
+  it('props 清洗：顶层 stack 保留到 4096（与服务端一致），其它字符串仍 1024', async () => {
+    const t = createTestClient()
+    t.client.track('stacky', { stack: 's'.repeat(3000), message: 'm'.repeat(2000) })
+    t.client.track('stacky2', { stack: 't'.repeat(5000), nested: { stack: 'n'.repeat(2000) } })
+    await t.client.flush()
+    const a = allEvents(t.sent).find((e) => e.event === 'stacky')
+    const b = allEvents(t.sent).find((e) => e.event === 'stacky2')
+    expect((a?.props.stack as string).length).toBe(3000)
+    expect((a?.props.message as string).length).toBe(1024)
+    expect((b?.props.stack as string).length).toBe(4096)
+  })
+
   it('不同 anonymous_id 序列化进新 KV 时互不影响（identify 持久化）', () => {
     const kv = new MemoryKeyValueStore()
     const t = createTestClient({}, { kv })
