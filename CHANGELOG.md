@@ -20,6 +20,7 @@
 
 ### 新增
 
+- 会话回放默认每 3 分钟做一次全量快照（rrweb 内置 `checkoutEveryNms`），`replayPlugin({ checkoutEveryNms })` 可调整，传 `false` 关闭。中间某块丢失时，播放器可以从下一个全量快照接着播；代价是每 3 分钟多一份 DOM 快照的上传量（gzip 后通常几十 KB）
 - `tracker.selfCheck()`：结构化接入自检（config / ping / sampling / consent / privacy / queue / replay / filters，每项 ok/warn/fail + message + fix），只真实请求一次 `GET /track/config?app_key=`，不发送用户数据。实现由 `createTracker` 注入，不进 core 入口
 - `beforeSend(event)` 钩子（返回 null/false 丢弃；只合并返回的 props；抛错默认丢弃，`beforeSendOnError: 'keep'` 可改为发送原事件；不覆盖回放与接口响应体）、`ignoreErrors`（字符串/RegExp/谓词）、`skipHandledErrors` 开关（默认值见上方「行为变更」）
 - `trackApiError({ url, method, status, bizCode, message, durationMs })`：手动上报 `api_request`（success=false, source=manual）；url 与 api-monitor 同口径脱敏敏感 query（`token` / `access_token` 等值替换为 `***`）后截断 512
