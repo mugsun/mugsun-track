@@ -64,16 +64,19 @@ interface PendingUrgent {
 }
 
 /**
- * pagehide 收尾块单块明文上限（JSON 字节）。base64 膨胀 4/3 后约 58.7KB，加信封仍低于
- * transport 的 beacon 阈值 60KB（sendBeacon 硬限 64KB），保证每块都能走 beacon。
- */
-export const FINAL_CHUNK_MAX_BYTES = 44 * 1024
-/**
  * pagehide 收尾总预算（请求体字节，即 JSON.stringify(payload) 的 UTF-8 长度）：sendBeacon 与
- * fetch keepalive 共用每个文档约 64KB 的在途额度，所有收尾块合计不超过 60KB（留余量）。
+ * fetch keepalive 共用每个文档约 64KB 的在途额度，而 pagehide 时普通事件队列的收尾 beacon、
+ * 以及可能仍在途的回放块也占这份额度，回放收尾只取 44KB。
  * 按 seq 顺序发送，第一块放不下即停止，后面的全部丢弃（保留最早的事件、不在中间留空洞）。
  */
-export const FINAL_WIRE_BUDGET = 60 * 1024
+export const FINAL_WIRE_BUDGET = 44 * 1024
+/**
+ * pagehide 收尾块单块明文上限（JSON 字节）：base64 膨胀 4/3 后约 42.7KB，加信封仍在
+ * FINAL_WIRE_BUDGET 内，单块总能放进预算。
+ */
+export const FINAL_CHUNK_MAX_BYTES = 32 * 1024
+/** 收尾块信封（app_key/session_id/seq/event_count/gzip 等字段名与引号）估算余量 */
+const ENVELOPE_OVERHEAD = 160
 /**
  * 普通/后台块单块明文上限（JSON 字节）：服务端 base64 上限 1,442,802 字符（≈1.08MB 原文），
  * gzip 失败降级明文时也不能超；压缩时再受服务端解压上限 4MB 约束，取 1MB 两者都满足。
@@ -255,6 +258,11 @@ export class ReplayRecorder {
     let budget = FINAL_WIRE_BUDGET
     let dropped = 0
     let full = false
+    /** 预检：按估算的请求体大小判断还放不放得下；放不下即进入「已满」，后续块都不再编码 */
+    const fits = (estimate: number): boolean => {
+      if (full || estimate > budget) full = true
+      return !full
+    }
     const fire = (payload: ReplayChunkPayload): void => {
       const wire = byteLength(JSON.stringify(payload))
       if (full || wire > budget) {
@@ -285,7 +293,7 @@ export class ReplayRecorder {
       token.superseded = true
       const groups = splitByBytes(token.items, FINAL_CHUNK_MAX_BYTES)
       groups.forEach((group, i) => {
-        this.sendPlain(group, groups.length === 1 && i === 0 ? token.seq : this.seq++, fire, (n) => {
+        this.sendPlain(group, groups.length === 1 && i === 0 ? token.seq : this.seq++, fits, fire, (n) => {
           dropped += n
         })
       })
@@ -294,7 +302,7 @@ export class ReplayRecorder {
     // ③ 缓冲剩余
     if (this.buf.length > 0) {
       for (const group of splitByBytes(this.takeAll(), FINAL_CHUNK_MAX_BYTES)) {
-        this.sendPlain(group, this.seq++, fire, (n) => {
+        this.sendPlain(group, this.seq++, fits, fire, (n) => {
           dropped += n
         })
       }
@@ -302,14 +310,26 @@ export class ReplayRecorder {
     if (dropped > 0) this.log(`replay 收尾超出卸载期发送额度，丢弃 ${dropped} 条事件`)
   }
 
-  /** 明文成块交给 fire；单条超出 beacon 限额的事件（如大 DOM 全量快照）卸载期无法送达，丢弃 */
+  /**
+   * 明文成块交给 fire。先用字节数估算请求体（base64 = 4·⌈n/3⌉ + 信封），预算已满或放不下时
+   * 直接丢弃，不做 base64 和 JSON 拼接（卸载期主线程时间宝贵）；单条超出单块上限的事件
+   * （如大 DOM 全量快照）卸载期无法送达，同样丢弃。
+   */
   private sendPlain(
     group: BufItem[],
     seq: number,
+    fits: (estimate: number) => boolean,
     fire: (p: ReplayChunkPayload) => void,
     drop: (n: number) => void
   ): void {
-    if (group.reduce((n, i) => n + i.len, 0) > FINAL_CHUNK_MAX_BYTES) {
+    const raw = group.reduce((n, i) => n + i.len, 0) + group.length + 1
+    if (raw > FINAL_CHUNK_MAX_BYTES) {
+      drop(group.length)
+      return
+    }
+    const sid = this.sessionId as string
+    const estimate = 4 * Math.ceil(raw / 3) + byteLength(this.opts.appKey) + byteLength(sid) + ENVELOPE_OVERHEAD
+    if (!fits(estimate)) {
       drop(group.length)
       return
     }
