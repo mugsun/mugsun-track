@@ -140,7 +140,8 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
       // 挂载点：供调试/测试手动控制（正常路径由内部钩子自动触发）
       const controller: ReplayController = {
         forceUpload: () => recorder.forceUpload(),
-        flushFinal: () => recorder.flushFinal()
+        flushFinal: () => recorder.flushFinal(),
+        textMasked: Boolean(pluginOpts.maskTextSelector)
       }
       client.replay = controller
 
@@ -193,10 +194,5 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
   }
 }
 
-export {
-  ReplayRecorder,
-  FINAL_CHUNK_MAX_BYTES,
-  FINAL_WIRE_BUDGET,
-  CHUNK_MAX_BYTES
-} from './recorder'
+export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_WIRE_BUDGET, CHUNK_MAX_BYTES } from './recorder'
 export type { ReplayRecorderOptions } from './recorder'

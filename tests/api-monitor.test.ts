@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiMonitorPlugin, type ApiMonitorPluginOptions } from '../src/plugins/api-monitor'
-import type { ApiBodyPayload, ApiBodySendOutcome } from '../src/plugins/api-monitor/uploader'
+import {
+  ApiBodyUploader,
+  maskSensitiveBody,
+  type ApiBodyPayload,
+  type ApiBodySendOutcome
+} from '../src/plugins/api-monitor/uploader'
 import type { TrackOptions } from '../src/types'
 import { allEvents, createTestClient, destroyAllClients, type TestClient } from './helpers'
 
@@ -589,6 +594,33 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
 })
 
 // ---------------------------------------------------------------- 默认配置下仍生效的保护（回归）
+
+describe('ApiBodyUploader 默认值', () => {
+  it('不传 maskEnabled：个人信息键原文，凭证键 ***', async () => {
+    const cap = captureBodySend()
+    const up = new ApiBodyUploader({ appKey: 'app', send: cap.send, gzip: fakeGzip })
+    up.push(JSON.stringify({ phone: '13800000000', refresh_token: 'r', email: 'a@b.c' }), 'e1')
+    await settle()
+    expect(JSON.parse(decodeBody(cap.calls[0].payload))).toEqual({
+      phone: '13800000000',
+      refresh_token: '***',
+      email: 'a@b.c'
+    })
+    up.destroy()
+  })
+
+  it('maskSensitiveBody 不传第二个参数时保持原口径（两类都替换）', () => {
+    expect(JSON.parse(maskSensitiveBody('{"phone":"1","token":"t","id":2}'))).toEqual({
+      phone: '***',
+      token: '***',
+      id: 2
+    })
+    expect(JSON.parse(maskSensitiveBody('{"phone":"1","token":"t"}', false))).toEqual({
+      phone: '1',
+      token: '***'
+    })
+  })
+})
 
 describe('默认配置下仍生效的保护（回归）', () => {
   it('默认配置：登录/凭证端点的响应体不上传', async () => {

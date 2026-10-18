@@ -103,6 +103,8 @@ export interface ReplayController {
   forceUpload(): void
   /** 立即切收尾块并 beacon 发送（页面卸载场景） */
   flushFinal(): void
+  /** 是否设置了 maskTextSelector（页面文本遮罩）；供 selfCheck 提示 */
+  textMasked?: boolean
 }
 
 /** SPA 路由信息（url_path 原始路径 + route_path 路由模板双写） */

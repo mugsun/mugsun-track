@@ -6,6 +6,10 @@
 
 > 计划版本：**0.3.0**（minor，含下方行为变更）。本 PR 不改 `package.json` 版本号，避免合入即触发自动发布；发版另走版本 PR。
 
+> **升级提示**：如果你靠 0.2.0 的默认遮罩满足合规要求，升级后必须显式配置 `replayPlugin({ maskTextSelector: '*' })` 和 `apiBodyMaskEnabled: true`，否则回放会录页面原文，响应体里的个人信息字段会原文上传。
+>
+> 注意远端配置：mugsun-boot 的 `track_app.api_body_mask_enabled` 默认是 `0`，`/track/config` 会下发 `apiBodyMaskEnabled: false`。本地没有设置 `apiBodyMaskEnabled` 时，SDK 用远端值（下次启动生效），所以即使在 0.2.0，开了远端配置的应用实际也不脱敏。想确保脱敏，就在本地显式设 `apiBodyMaskEnabled: true`（本地显式设置优先于远端），或在管理后台打开「响应体脱敏」。
+
 ### 行为变更
 
 - **会话回放默认不遮罩页面文本**：`replayPlugin` 的 `maskTextSelector` 默认不再是 `'*'`，回放里显示原文（0.2.0 起默认遮全页文本）。需要遮罩请显式传 `replayPlugin({ maskTextSelector: '*' })` 或更窄的选择器。输入框的值仍按 `maskAllInputs` 遮成 `***`，`password` 与 `maskSelectors` / `data-track-mask` 区域仍整块不录。
@@ -15,7 +19,7 @@
   - 导出的 `maskSensitiveBody(raw, personal = true)` 新增第二个参数，不传时与原来一样两类都替换。
   - 只处理合法 JSON body；非 JSON 的响应体原样上传。凭证端点（`/auth/login` 等）的响应体仍然一律不采集。
 - **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
-- **`selfCheck()` 隐私项**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认）也给出提示（`warn`，不会 `fail`）。此前只在显式设 `false` 时提示。
+- **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启且未脱敏」；回放已加载但没有设 `maskTextSelector` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复

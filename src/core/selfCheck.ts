@@ -38,6 +38,8 @@ export interface SelfCheckState {
   sampled: boolean
   queueSize: number
   replayLoaded: boolean
+  /** 回放插件设置了 maskTextSelector（未加载回放时无意义） */
+  replayTextMasked?: boolean
   pluginNames: string[]
 }
 
@@ -190,9 +192,8 @@ export async function runSelfCheck(
 
   // ---- privacy
   const priv: string[] = []
-  // 默认（未设置）也提示：个人信息字段默认原文上传；只是提示（warn），不会 fail
-  if (o.apiBodyEnabled && o.apiBodyMaskEnabled !== true)
-    priv.push('响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）')
+  // 默认（未设置）也提示；只是 warn，不会 fail（凭证类键不论开关始终脱敏）
+  if (o.apiBodyEnabled && o.apiBodyMaskEnabled !== true) priv.push('响应体采集已开启且未脱敏')
   if (!o.respectDnt) priv.push('respectDnt=false')
   add(
     'privacy',
@@ -217,6 +218,14 @@ export async function runSelfCheck(
       'warn',
       'replayEnabled 开启但回放插件未加载',
       "从 '@mugsun/track-web/replay' 引入 replayPlugin 并加入 plugins"
+    )
+  } else if (o.replayEnabled && !s.replayTextMasked) {
+    // 只是 warn，不会 fail：0.3.0 起回放默认录页面原文
+    add(
+      'replay',
+      'warn',
+      '回放插件已加载，未设置 maskTextSelector，页面文本录原文',
+      "页面含个人信息时传 replayPlugin({ maskTextSelector: '*' }) 或更窄的选择器"
     )
   } else {
     add('replay', 'ok', s.replayLoaded ? '回放插件已加载' : '未启用回放')

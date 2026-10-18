@@ -108,6 +108,17 @@ describe('Vue 集成', () => {
     expect(prevCalls).toEqual(['setup'])
   })
 
+  it('errorHandler 默认（skipHandledErrors=false）上报 HttpError 与 handled 错误', async () => {
+    const { app, client } = installApp()
+    app.config.errorHandler!(Object.assign(new Error('401'), { name: 'HttpError' }), null, 'a')
+    app.config.errorHandler!(Object.assign(new Error('x'), { handled: true }), null, 'b')
+    await client.flush()
+    const msgs = allEvents(sent)
+      .filter((e) => e.event === '$error')
+      .map((e) => e.props.message)
+    expect(msgs).toEqual(['401', 'x'])
+  })
+
   it('errorHandler 在 skipHandledErrors=true 时跳过 HttpError 与 handled 错误，ignoreErrors 生效；原 handler 仍被调用', async () => {
     const { app, client } = installApp(undefined, {
       ignoreErrors: [/ResizeObserver/],

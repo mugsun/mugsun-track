@@ -360,9 +360,7 @@ describe('replay 收尾块拆分（pagehide / 转后台）', () => {
       [0, false],
       [1, false]
     ])
-    expect(cap.calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))).toEqual([
-      0, 1, 2, 3
-    ])
+    expect(cap.calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))).toEqual([0, 1, 2, 3])
     release()
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(0)
@@ -381,13 +379,7 @@ describe('replay 收尾块拆分（pagehide / 转后台）', () => {
       }
       return cap.send(p, o)
     }
-    const rec = new ReplayRecorder({
-      appKey: 'app',
-      uploadEnabled: true,
-      send,
-      gzip: fakeGzip,
-      eventsPerChunk: 2
-    })
+    const rec = new ReplayRecorder({ appKey: 'app', uploadEnabled: true, send, gzip: fakeGzip, eventsPerChunk: 2 })
     rec.bindSession('s1', true)
     rec.push(fakeEvent(0, 0))
     rec.push(fakeEvent(1, 1)) // 满 2 条切普通块 seq0，发出后一直在途
@@ -564,6 +556,17 @@ describe('replay 插件', () => {
     const { stub } = setup({}, { maskTextSelector: false })
     expect(stub.calls).toHaveLength(1)
     expect('maskTextSelector' in stub.calls[0]).toBe(false)
+  })
+
+  it('selfCheck：回放未设置 maskTextSelector 时 replay 项 warn（不 fail），设置后 ok', async () => {
+    const plain = setup().t
+    const r1 = (await plain.client.selfCheck()).items.find((i) => i.id === 'replay')
+    expect(r1?.status).toBe('warn')
+    expect(r1?.message).toContain('maskTextSelector')
+    destroyAllClients()
+    const masked = setup({}, { maskTextSelector: '*' }).t
+    const r2 = (await masked.client.selfCheck()).items.find((i) => i.id === 'replay')
+    expect(r2?.status).toBe('ok')
   })
 
   it('record 可开启全页文本遮罩（maskTextSelector=*）', () => {
