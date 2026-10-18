@@ -53,7 +53,7 @@ function base64FromString(s: string): string {
 
 /**
  * 凭证类键：与 URL 脱敏共用 core/utils.ts 的 SENSITIVE_KEYS，**始终**整值替换 ***。
- * URL_ONLY_SENSITIVE_KEYS（code、sign、ticket、session 等）只用于 URL，响应体里保留原值，
+ * URL_ONLY_SENSITIVE_KEYS（code、sign、ticket 等）只用于 URL，响应体里保留原值，
  * 不受 apiBodyMaskEnabled 控制。凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
  */
 const CREDENTIAL_KEYS = SENSITIVE_KEYS

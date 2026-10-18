@@ -179,10 +179,13 @@ describe('页面 URL / referrer / 链接 / 资源地址脱敏', () => {
 })
 
 describe('凭证键共用一份清单，code / sign 等只在 URL 里脱敏', () => {
-  it('业务响应 {code,msg,data:{sign,ticket,session}} 原样保留', async () => {
+  it('业务响应 {code,msg,data:{sign,ticket}} 原样保留；session 属凭证键，响应体里也替换', async () => {
     const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
-    const body = { code: 0, msg: 'ok', data: { sign: true, ticket: 1, session: 'x' } }
+    const body = { code: 0, msg: 'ok', data: { sign: true, ticket: 1 } }
     expect(JSON.parse(maskSensitiveBody(JSON.stringify(body), false))).toEqual(body)
+    expect(
+      JSON.parse(maskSensitiveBody(JSON.stringify({ code: 0, data: { session: 'x' } }), false))
+    ).toEqual({ code: 0, data: { session: '***' } })
     expect(
       JSON.parse(maskSensitiveBody(JSON.stringify({ signature: 's', otp: '1' }), false))
     ).toEqual({

@@ -623,6 +623,7 @@ describe('凭证键归一、非法 JSON、超深嵌套（安全复核 R2）', ()
       clientSecret: 'c2',
       'Set-Cookie': 'sid=1',
       sessionId: 's',
+      session: { id: 's2' },
       JSESSIONID: 'j',
       'X-Api-Key': 'k',
       privateKey: 'p',
@@ -639,14 +640,14 @@ describe('凭证键归一、非法 JSON、超深嵌套（安全复核 R2）', ()
     t.client.destroy()
   })
 
-  it('归一后精确匹配：tokenCount / passwordHint / sessionTimeout 保留原值；session 只在 URL 里脱敏，响应体里保留', () => {
+  it('归一后精确匹配：tokenCount / passwordHint / sessionTimeout 保留原值（session 在清单里也不影响）', () => {
     const out = JSON.parse(
       maskSensitiveBody(
         JSON.stringify({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: 's' }),
         false
       )
     ) as Record<string, unknown>
-    expect(out).toEqual({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: 's' })
+    expect(out).toEqual({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: '***' })
   })
 
   it('响应体整条链路只 JSON.parse 一次', async () => {

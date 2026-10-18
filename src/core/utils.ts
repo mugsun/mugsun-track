@@ -165,17 +165,18 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
     // 会话标识与 cookie
     'cookie',
     'set-cookie',
+    'session',
     'session_id',
     'jsessionid'
   ].map(normalizeKey)
 )
 
 /**
- * 只在 URL（查询串、hash、referrer）里脱敏的键：OAuth 授权码、签名、CAS/SSO 票据、会话、一次性验证码。
+ * 只在 URL（查询串、hash、referrer）里脱敏的键：OAuth 授权码、签名、CAS/SSO 票据、一次性验证码。
  * 这些键在响应体里常是业务字段（如 {code:0}、{sign:true}），响应体里**不**替换，便于看接口错误、复现问题。
  */
 export const URL_ONLY_SENSITIVE_KEYS: ReadonlySet<string> = new Set(
-  ['code', 'sign', 'signature', 'ticket', 'session', 'otp'].map(normalizeKey)
+  ['code', 'sign', 'signature', 'ticket', 'otp'].map(normalizeKey)
 )
 
 const isSensitiveUrlKey = (key: string): boolean => {
