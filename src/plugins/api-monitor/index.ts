@@ -89,6 +89,16 @@ interface UrlInfo {
 /** body 过滤链裁定：collect 读体上传；size/credential 跳过并标记；skip 静默跳过（非 JSON/SSE/二进制） */
 type BodyAction = 'collect' | 'size' | 'credential' | 'skip'
 
+/** 声明为 JSON 的响应体能否解析：不能则不上传 body，标 body_skipped=unparsable */
+const isParsableJson = (text: string): boolean => {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * api_request：fetch / XHR 包装监控（G102）。
  * - 启停由 apiMonitorEnabled 控制（本地显式设置优先，否则远端下发，默认关）；关则不包装
@@ -164,7 +174,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
         error_message?: string
         response_size?: number
         body_ref?: string
-        body_skipped?: 'size' | 'credential'
+        body_skipped?: 'size' | 'credential' | 'unparsable'
       }
 
       /** 事件元数据上报（进正常事件队列；page 关联 url_path/route_path 走 core 公共属性机制） */
@@ -191,6 +201,10 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
         const size = contentLength ?? byteLength(text)
         if (byteLength(text) > maxBytes) {
           report({ ...base, response_size: size, body_skipped: 'size' })
+          return
+        }
+        if (!isParsableJson(text)) {
+          report({ ...base, response_size: size, body_skipped: 'unparsable' })
           return
         }
         const eventId = uuid()

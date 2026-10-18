@@ -105,6 +105,8 @@ export interface ReplayController {
   flushFinal(): void
   /** 是否设置了 maskTextSelector（页面文本遮罩）；供 selfCheck 提示 */
   textMasked?: boolean
+  /** 是否设置了 maskAllInputs: true；供 selfCheck 提示 */
+  inputsMasked?: boolean
 }
 
 /** SPA 路由信息（url_path 原始路径 + route_path 路由模板双写） */
