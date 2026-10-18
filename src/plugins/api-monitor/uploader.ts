@@ -78,7 +78,13 @@ const CREDENTIAL_KEYS = new Set(
     'set-cookie',
     'session',
     'session_id',
-    'jsessionid'
+    'jsessionid',
+    // 明确的凭证：JWT、一次性验证码、云厂商 AK/SK。
+    // URL 清单里的 code / sign / signature / ticket 在 body 里常是业务字段（错误码、签名开关、工单），不纳入
+    'jwt',
+    'otp',
+    'access_key',
+    'secret_key'
   ].map(normalizeKey)
 )
 
