@@ -18,7 +18,7 @@ export interface ApiBodyUploaderOptions {
   send: (payload: ApiBodyPayload) => Promise<ApiBodySendOutcome>
   /** CompressionStream 包装；缺省或失败降级明文（gzip:false 标记） */
   gzip?: (body: string) => Promise<ArrayBuffer>
-  /** 业务字段脱敏（apiBodyMaskEnabled）：上传前对 JSON body 递归脱敏，默认 true */
+  /** 业务字段脱敏（apiBodyMaskEnabled）：上传前对 JSON body 递归脱敏，默认 false（原文上传） */
   maskEnabled?: boolean
   /** 单条失败重试次数（指数退避后丢弃），默认 3 */
   maxRetries?: number
@@ -51,7 +51,7 @@ function base64FromString(s: string): string {
 
 /**
  * 内置业务敏感键清单（小写归一后精确匹配）：命中即整值替换 ***。
- * 仅业务字段脱敏（apiBodyMaskEnabled 控制，默认开）；
+ * 仅业务字段脱敏（apiBodyMaskEnabled 控制，默认关）；
  * 凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
  */
 const SENSITIVE_KEYS = new Set([
@@ -112,7 +112,7 @@ export class ApiBodyUploader {
   constructor(options: ApiBodyUploaderOptions) {
     this.opts = {
       send: options.send,
-      maskEnabled: options.maskEnabled ?? true,
+      maskEnabled: options.maskEnabled ?? false,
       maxRetries: options.maxRetries ?? 3,
       retryBaseDelay: options.retryBaseDelay ?? 1000,
       retryMaxDelay: options.retryMaxDelay ?? 30000,

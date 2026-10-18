@@ -2,7 +2,7 @@ import type { ResolvedTrackOptions } from '../types'
 
 /**
  * 错误是否应被忽略（不上报 $error）。
- * 默认（skipHandledErrors）跳过 name==='HttpError' 与 handled/expected 标记的错误；
+ * skipHandledErrors 为 true 时（默认 false）跳过 name==='HttpError' 与 handled/expected 标记的错误；
  * 再按 ignoreErrors（字符串子串 / RegExp / 谓词）匹配。谓词抛错按不忽略处理
  */
 export function isIgnoredError(

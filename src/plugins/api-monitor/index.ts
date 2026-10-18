@@ -89,7 +89,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
             appKey: options.appKey,
             send: pluginOpts.send ?? createDefaultSend(options),
             gzip: pluginOpts.gzip === null ? undefined : (pluginOpts.gzip ?? createDefaultGzip()),
-            maskEnabled: options.apiBodyMaskEnabled ?? true,
+            maskEnabled: options.apiBodyMaskEnabled ?? false,
             maxRetries: pluginOpts.maxRetries,
             retryBaseDelay: options.retryBaseDelay,
             retryMaxDelay: options.retryMaxDelay,

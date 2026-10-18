@@ -108,8 +108,11 @@ describe('Vue 集成', () => {
     expect(prevCalls).toEqual(['setup'])
   })
 
-  it('errorHandler 默认跳过 HttpError 与 handled 错误，ignoreErrors 生效；原 handler 仍被调用', async () => {
-    const { app, client } = installApp(undefined, { ignoreErrors: [/ResizeObserver/] })
+  it('errorHandler 在 skipHandledErrors=true 时跳过 HttpError 与 handled 错误，ignoreErrors 生效；原 handler 仍被调用', async () => {
+    const { app, client } = installApp(undefined, {
+      ignoreErrors: [/ResizeObserver/],
+      skipHandledErrors: true
+    })
     const prevCalls: string[] = []
     const prev = app.config.errorHandler
     app.config.errorHandler = (err, instance, info) => {

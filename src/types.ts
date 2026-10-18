@@ -153,7 +153,7 @@ export interface TrackOptions {
   apiMonitorEnabled?: boolean
   /** 响应体采集开关，默认关；优先级同上。仅在 apiMonitorEnabled 开启后生效 */
   apiBodyEnabled?: boolean
-  /** 响应体业务字段脱敏开关（内置敏感键清单 → ***），默认开；优先级同上。依赖全文 body 时显式设 false */
+  /** 响应体业务字段脱敏开关（内置敏感键清单 → ***），默认关（原文上传）；优先级同上。需要脱敏时显式设 true */
   apiBodyMaskEnabled?: boolean
   /** 响应体安全阀（字节），默认 1MB；优先级同上。超限不采并标 body_skipped=size */
   apiBodyMaxBytes?: number
@@ -195,8 +195,8 @@ export interface TrackOptions {
   /** beforeSend 抛错时的处理：'drop'（默认，丢弃事件）或 'keep'（发送钩子处理前的原事件） */
   beforeSendOnError?: 'drop' | 'keep'
   /**
-   * 默认跳过「已处理/预期」错误，默认 true：error.name === 'HttpError'，
-   * 或 error.handled === true / error.expected === true（业务已提示用户的接口错误等）。设 false 全部上报
+   * 跳过「已处理/预期」错误，默认 false（全部上报）。设 true 时跳过：error.name === 'HttpError'，
+   * 或 error.handled === true / error.expected === true（业务已提示用户的接口错误等）
    */
   skipHandledErrors?: boolean
 }
@@ -233,7 +233,7 @@ export type ResolvedTrackOptions = Required<
     plugins: TrackPlugin[]
     /**
      * G102 接口监控链四开关：本地显式设置优先（强制覆盖远端下发），未设置时远端缓存配置补齐；
-     * 最终缺省（关/关/开/1MB）由 api-monitor 插件兜底（apiBodyMaskEnabled 默认开）
+     * 最终缺省（关/关/关/1MB）由 api-monitor 插件兜底（apiBodyMaskEnabled 默认关）
      */
     apiMonitorEnabled?: boolean
     apiBodyEnabled?: boolean

@@ -46,7 +46,7 @@ export interface ReplayPluginOptions {
   checkoutEveryNms?: number | false
   /**
    * 页面文本遮罩选择器（rrweb maskTextSelector）。
-   * 默认 '*'（遮全页文本，与隐私文档对齐）；传 false 关闭文本遮罩（仅调试）。
+   * 默认不遮罩（录原文）；传 '*' 遮全页文本，或传更窄的选择器只遮部分区域。false 与不传等价。
    */
   maskTextSelector?: string | false
   /** 测试注入：替代 rrweb.record（不引真实 DOM 录制） */
@@ -161,12 +161,12 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
           if (destroyed) return
           stopRecord = record({
             emit: (event) => recorder.push(event),
-            // 隐私默认最严：所有输入值 ***；页面文本默认 maskTextSelector='*'（可显式 false 关闭）；
+            // 所有输入值 ***；页面文本默认不遮罩（录原文），接入方按需传 maskTextSelector；
             // password 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas
             maskAllInputs: true,
-            ...(pluginOpts.maskTextSelector === false
-              ? {}
-              : { maskTextSelector: pluginOpts.maskTextSelector ?? '*' }),
+            ...(pluginOpts.maskTextSelector
+              ? { maskTextSelector: pluginOpts.maskTextSelector }
+              : {}),
             blockSelector: [ALWAYS_BLOCK, ...options.maskSelectors].join(', '),
             recordCanvas: false,
             ...(pluginOpts.checkoutEveryNms === false
@@ -193,5 +193,10 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
   }
 }
 
-export { ReplayRecorder, FINAL_CHUNK_MAX_BYTES, FINAL_WIRE_BUDGET, CHUNK_MAX_BYTES } from './recorder'
+export {
+  ReplayRecorder,
+  FINAL_CHUNK_MAX_BYTES,
+  FINAL_WIRE_BUDGET,
+  CHUNK_MAX_BYTES
+} from './recorder'
 export type { ReplayRecorderOptions } from './recorder'

@@ -8,7 +8,9 @@
 
 ### 行为变更
 
-- **`skipHandledErrors` 默认 `true`**：error 插件（window error / unhandledrejection）与 Vue errorHandler 默认不再上报 `name === 'HttpError'` 及 `handled === true` / `expected === true` 的错误。升级后 `$error` 数量可能下降；需要旧行为请设 `skipHandledErrors: false`，或用 `trackApiError` 单独统计接口失败。
+- **会话回放默认不遮罩页面文本**：`replayPlugin` 的 `maskTextSelector` 默认不再是 `'*'`，回放里显示原文（0.2.0 起默认遮全页文本）。需要遮罩请显式传 `replayPlugin({ maskTextSelector: '*' })` 或更窄的选择器。输入框的值仍按 `maskAllInputs` 遮成 `***`，`password` 与 `maskSelectors` / `data-track-mask` 区域仍整块不录。
+- **`apiBodyMaskEnabled` 默认改为 `false`**（api-body 上传器内部的 `maskEnabled` 同步默认 `false`）：开启响应体采集时，JSON body 默认原文上传，不再按内置敏感键清单替换为 `***`（0.2.0 起默认脱敏）。需要脱敏请显式设 `apiBodyMaskEnabled: true`，或远端下发 `1`。
+- **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复

@@ -71,7 +71,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 
 `appKey` 在浏览器端可见，不具备机密性。服务端须通过存在性校验、限流、队列背压与事件校验实施防护。
 
-隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入与页面文本（`maskTextSelector: '*'`，可显式关闭）；`apiBodyMaskEnabled` 默认开启。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
+隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入值，页面文本默认显示原文（需要遮罩时传 `maskTextSelector: '*'` 或更窄的选择器）；`apiBodyMaskEnabled` 默认关闭（响应体原文上传，需要脱敏时设 `true`）。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
 
 构建门禁：`dist/core.js` gzip 体积不超过 8 KB；当前发布说明中的 core 体积约为 6.3 KB gzip。
 
@@ -85,7 +85,7 @@ const tracker = createTracker({
   beforeSend: (e) => (e.event === 'debug_only' ? null : e),
   // 字符串按 message 子串、RegExp 按 message、或谓词 (error, message) => boolean
   ignoreErrors: ['ResizeObserver loop', /^AbortError/],
-  // 默认 true：跳过 name==='HttpError' 及 handled/expected 标记的错误
+  // 默认 false（全部上报）；设 true 跳过 name==='HttpError' 及 handled/expected 标记的错误
   skipHandledErrors: true
 })
 
@@ -98,10 +98,10 @@ console.table(report.items) // 每项 { id, status: 'ok'|'warn'|'fail', message,
 ```
 
 - `beforeSend` 只合并返回对象的 `props`（`event_id`、`distinct_id` 等不可改），非对象返回值视为不改。钩子抛错时**默认丢弃**该事件，避免脱敏钩子出错时发出未脱敏数据；需要保留可设 `beforeSendOnError: 'keep'`（发送钩子处理前的原事件）。
-- **`beforeSend` 不经过的数据**：会话事件（`$session_start` / `$session_end`）、**会话回放**块、**接口响应体**上传。回放请用 `maskTextSelector` / `maskSelectors`，响应体请用 `apiBodyMaskEnabled`（默认开启）。
+- **`beforeSend` 不经过的数据**：会话事件（`$session_start` / `$session_end`）、**会话回放**块、**接口响应体**上传。回放请用 `maskTextSelector` / `maskSelectors`，响应体请用 `apiBodyMaskEnabled`（默认关闭）。
 - `selfCheck()` 只真实请求一次 `GET /track/config?app_key=`（不带 cookie），不发送任何用户数据、不入事件队列。
 - `trackApiError` 上报 `api_request` 事件（`success=false`、`source=manual`，带 `biz_code`），与 `api-monitor` 同口径；`url` 中的敏感 query（`token`、`access_token` 等）值替换为 `***`。
-- **行为变更**：`skipHandledErrors` 默认 `true`，升级后 `HttpError` 与 handled/expected 错误不再上报为 `$error`；需要旧行为设为 `false`。
+- `skipHandledErrors` 默认 `false`：`HttpError` 与 handled/expected 错误默认都上报为 `$error`；不想上报时设为 `true`。
 - `ignoreErrors` / `skipHandledErrors` 对 `error` 插件（window error、unhandledrejection）与 Vue `errorHandler` 同时生效。
 - 上报地址带 `?app_key=`：请求体无法解析或超限被拒时，服务端仍可把拒绝原因归到应用，在管理端「接入健康」查看。
 - 自检实现由 `createTracker` 注入，不计入 core 入口；纯 core 用法需自行注入 `deps.selfCheck = runSelfCheck`。

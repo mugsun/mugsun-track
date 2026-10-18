@@ -196,7 +196,7 @@ export async function runSelfCheck(
     'privacy',
     priv.length ? 'warn' : 'ok',
     priv.length ? priv.join('；') : `隐私默认值生效（屏蔽选择器 ${o.maskSelectors.length} 个）`,
-    '保持 apiBodyMaskEnabled 默认开启；如无必要不要关闭 respectDnt'
+    '响应体含敏感字段时设 apiBodyMaskEnabled: true；如无必要不要关闭 respectDnt'
   )
 
   // ---- queue

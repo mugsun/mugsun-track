@@ -360,7 +360,9 @@ describe('replay 收尾块拆分（pagehide / 转后台）', () => {
       [0, false],
       [1, false]
     ])
-    expect(cap.calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))).toEqual([0, 1, 2, 3])
+    expect(cap.calls.flatMap((c) => decodeChunk(c.payload).map((e) => e.data.id))).toEqual([
+      0, 1, 2, 3
+    ])
     release()
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(0)
@@ -379,7 +381,13 @@ describe('replay 收尾块拆分（pagehide / 转后台）', () => {
       }
       return cap.send(p, o)
     }
-    const rec = new ReplayRecorder({ appKey: 'app', uploadEnabled: true, send, gzip: fakeGzip, eventsPerChunk: 2 })
+    const rec = new ReplayRecorder({
+      appKey: 'app',
+      uploadEnabled: true,
+      send,
+      gzip: fakeGzip,
+      eventsPerChunk: 2
+    })
     rec.bindSession('s1', true)
     rec.push(fakeEvent(0, 0))
     rec.push(fakeEvent(1, 1)) // 满 2 条切普通块 seq0，发出后一直在途
@@ -534,12 +542,12 @@ describe('replay 插件', () => {
     expect(allEvents(t.sent).map((e) => e.event)).toContain('biz_event')
   })
 
-  it('record 隐私选项：maskAllInputs、默认 maskTextSelector=*、blockSelector、不采 canvas', () => {
+  it('record 隐私选项：maskAllInputs、默认不遮罩页面文本（不传 maskTextSelector）、blockSelector、不采 canvas', () => {
     const { stub } = setup({ maskSelectors: ['.secret'] })
     expect(stub.calls).toHaveLength(1)
     const opts = stub.calls[0]
     expect(opts.maskAllInputs).toBe(true)
-    expect(opts.maskTextSelector).toBe('*')
+    expect('maskTextSelector' in opts).toBe(false)
     expect(opts.blockSelector).toBe('input[type="password"], [data-track-mask], .secret')
     expect(opts.recordCanvas).toBe(false)
   })
@@ -556,6 +564,11 @@ describe('replay 插件', () => {
     const { stub } = setup({}, { maskTextSelector: false })
     expect(stub.calls).toHaveLength(1)
     expect('maskTextSelector' in stub.calls[0]).toBe(false)
+  })
+
+  it('record 可开启全页文本遮罩（maskTextSelector=*）', () => {
+    const { stub } = setup({}, { maskTextSelector: '*' })
+    expect(stub.calls[0].maskTextSelector).toBe('*')
   })
 
   it('record 可自定义 maskTextSelector', () => {
