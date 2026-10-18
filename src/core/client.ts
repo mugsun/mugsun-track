@@ -34,6 +34,8 @@ export interface ClientDeps {
   configFetcher?: ConfigFetcher
   /** DNT 探测，默认false（不启用 DNT 限制）由外层注入真实实现 */
   isDnt?: () => boolean
+  /** Global Privacy Control 检测（浏览器注入 browserIsGpc） */
+  isGpc?: () => boolean
   /** selfCheck 连通性探测（GET /track/config，仅带 app_key）；缺省时 ping 项为 warn */
   ping?: Pinger
   /**
@@ -87,6 +89,7 @@ export class TrackClient {
   private kv: KeyValueStore
   private transport: Transport
   private dnt: boolean
+  private gpc: boolean
   private ping?: Pinger
   private selfCheckRunner?: SelfCheckRunner
 
@@ -111,9 +114,10 @@ export class TrackClient {
 
     this.optedOut = deps.kv.getItem(`${prefix}:${OPTOUT_SUFFIX}`) === '1'
     this.dnt = this.options.respectDnt && (deps.isDnt?.() ?? false)
+    this.gpc = this.options.respectGpc && (deps.isGpc?.() ?? false)
     this.ping = deps.ping
     this.selfCheckRunner = deps.selfCheck
-    this.disabled = !this.options.enabled || this.dnt
+    this.disabled = !this.options.enabled || this.dnt || this.gpc
 
     this.identity = new IdentityManager(deps.kv, `${prefix}:identity`)
     this.session = new SessionManager(deps.kv, `${prefix}:session`, this.options.sessionTimeout)
@@ -228,6 +232,7 @@ export class TrackClient {
         options: this.options,
         disabled: this.disabled,
         dnt: this.dnt,
+        gpc: this.gpc,
         optedOut: this.optedOut,
         sampled: this.sampled,
         queueSize: this.queue.size,

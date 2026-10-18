@@ -23,8 +23,34 @@ const SELF_PATH_SUFFIXES = [
   '/track/raw'
 ]
 
-/** 凭证端点路径片段（内置硬屏蔽，不可关）：响应含令牌，body 永不采集，事件元数据照发 */
-const CREDENTIAL_PATH_PARTS = ['/auth/login', '/auth/refresh', '/oauth/token', '/auth/social']
+/**
+ * 凭证端点路径片段（内置硬屏蔽，不可关，路径小写后子串匹配）：响应可能含令牌或验证码回显，
+ * body 永不采集，事件元数据照发。误判只会少采一个响应体
+ */
+const CREDENTIAL_PATH_PARTS = [
+  '/auth/login',
+  '/auth/refresh',
+  '/oauth/token',
+  '/auth/social',
+  // 注册
+  '/register',
+  '/signup',
+  '/sign-up',
+  // 找回 / 重置 / 修改密码
+  '/password',
+  '/forgot',
+  '/reset-password',
+  '/change-password',
+  // 一次性验证码、短信、图形验证码、多因素
+  '/otp',
+  '/sms',
+  '/captcha',
+  '/mfa',
+  '/2fa',
+  '/totp',
+  '/verify-code',
+  '/verification-code'
+]
 
 /** body 安全阀缺省 1MB（远端 apiBodyMaxBytes 可调） */
 const DEFAULT_BODY_MAX_BYTES = 1024 * 1024
@@ -122,7 +148,8 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
         contentType: string,
         contentLength: number | null
       ): BodyAction => {
-        if (CREDENTIAL_PATH_PARTS.some((p) => info.pathname.includes(p))) return 'credential'
+        const lowerPath = info.pathname.toLowerCase()
+        if (CREDENTIAL_PATH_PARTS.some((p) => lowerPath.includes(p))) return 'credential'
         // SSE/二进制/非 JSON 统一在此闸口拦截（不 clone 读体，避免整响应入内存双份）
         if (!contentType.includes('json')) return 'skip'
         if (contentLength !== null && contentLength > maxBytes) return 'size'

@@ -1,6 +1,7 @@
 import {
   browserContextProvider,
   browserIsDnt,
+  browserIsGpc,
   createBrowserKv,
   createBrowserTransportDeps,
   defaultConfigFetcher,
@@ -83,6 +84,7 @@ export function createTracker(options: TrackOptions): TrackClient {
         typeof window === 'undefined' ? undefined : browserContextProvider(options.release),
       configFetcher: defaultConfigFetcher,
       isDnt: browserIsDnt,
+      isGpc: browserIsGpc,
       ping: typeof fetch === 'undefined' ? undefined : browserPing,
       selfCheck: runSelfCheck
     }

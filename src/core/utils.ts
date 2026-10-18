@@ -139,12 +139,48 @@ const SENSITIVE_QUERY_KEYS = new Set([
   'apikey',
   'auth',
   'secret',
-  'password'
+  'password',
+  // 凭证类补充：OAuth 授权码、签名、CAS/SSO 票据、会话标识、一次性验证码
+  'code',
+  'sign',
+  'signature',
+  'ticket',
+  'session',
+  'otp'
 ])
 
+/** 对 `k=v&k2=v2` 形式的参数串做敏感键替换；返回 null 表示未命中 */
+function redactParamString(qs: string): string | null {
+  const params = new URLSearchParams(qs)
+  let changed = false
+  for (const key of Array.from(new Set(params.keys()))) {
+    if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+      params.set(key, '***')
+      changed = true
+    }
+  }
+  return changed ? params.toString() : null
+}
+
 /**
- * 剥离 URL 查询串中的敏感键值（大小写不敏感）。
- * 非法 URL 原样返回；无查询串不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
+ * hash 里的参数：OAuth 隐式流 `#access_token=...`、hash 路由 `#/cb?code=...`。
+ * 只处理含 `=` 的部分；返回 null 表示未命中
+ */
+function redactHash(hash: string): string | null {
+  if (!hash || !hash.includes('=')) return null
+  const body = hash.slice(1)
+  const q = body.indexOf('?')
+  if (q >= 0) {
+    const r = redactParamString(body.slice(q + 1))
+    return r === null ? null : `#${body.slice(0, q + 1)}${r}`
+  }
+  const r = redactParamString(body)
+  return r === null ? null : `#${r}`
+}
+
+/**
+ * 剥离 URL 查询串与 hash 参数中的敏感键值（大小写不敏感）。
+ * 非法 URL 原样返回；无参数不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
  */
 /** endpoint 归一：去首尾空白与末尾所有斜杠，避免拼出 //track/collect、//track/config */
 export function normalizeEndpoint(endpoint: string): string {
@@ -161,6 +197,11 @@ export function redactSensitiveUrl(url: string): string {
         u.searchParams.set(key, '***')
         changed = true
       }
+    }
+    const hash = redactHash(u.hash)
+    if (hash !== null) {
+      u.hash = hash
+      changed = true
     }
     if (!changed) return url
     // 相对 URL 输入时保留相对形态（去掉占位 origin）

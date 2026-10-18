@@ -1,5 +1,5 @@
 import type { PluginContext, Props, TrackPlugin } from '../types'
-import { truncate } from '../core/utils'
+import { redactSensitiveUrl, truncate } from '../core/utils'
 
 const ALWAYS_MASK = 'input[type="password"], [data-track-mask]'
 const CLICKABLE =
@@ -39,7 +39,7 @@ export function autocapturePlugin(): TrackPlugin {
         }
         if (el.tagName === 'A') {
           const href = el.getAttribute('href')
-          if (href) props.href = truncate(href, 512)
+          if (href) props.href = truncate(redactSensitiveUrl(href), 512)
         }
         return props
       }

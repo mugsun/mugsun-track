@@ -1,5 +1,5 @@
 import type { PluginContext, Props, TrackPlugin } from '../types'
-import { hashHex, stripStackUrlQuery, truncate } from '../core/utils'
+import { hashHex, redactSensitiveUrl, stripStackUrlQuery, truncate } from '../core/utils'
 
 /** 堆栈首帧：第一条带 URL 的堆栈行归一化（去行列号），与 message 一起生成指纹 */
 export function firstFrame(stack: string | undefined): string {
@@ -63,7 +63,7 @@ export function errorPlugin(): TrackPlugin {
             error_type: 'resource',
             message: `resource load failed: ${target.tagName.toLowerCase()}`,
             element_tag: target.tagName.toLowerCase(),
-            resource_url: truncate(target.src ?? target.href ?? '', 512)
+            resource_url: truncate(redactSensitiveUrl(target.src ?? target.href ?? ''), 512)
           })
         }
       }
