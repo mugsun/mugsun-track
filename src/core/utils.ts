@@ -135,11 +135,9 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
 export const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
 
 /**
- * 敏感键清单：URL 查询 / hash 参数与响应体 JSON 键**共用这一份**（安全复核 R3-1）。
- * 按 normalizeKey 归一后精确匹配，不做子串匹配（tokenCount、sessionTimeout、codeType 都不算）。
+ * 凭证键清单：URL 查询 / hash 参数、referrer 与响应体 JSON 键**共用这一份**。
+ * 按 normalizeKey 归一后精确匹配，不做子串匹配（tokenCount、sessionTimeout 都不算）。
  * 命中则值整值替换为 ***；响应体里不受 apiBodyMaskEnabled 控制。
- * 取舍：code / sign / signature / ticket 在响应体里常是业务字段（如 {code:0}），也会被替换；
- * 按复核决定宁可误伤也不漏凭证。
  */
 export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
   [
@@ -164,27 +162,33 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
     'password',
     'passwd',
     'pwd',
-    // 会话与 cookie
+    // 会话标识与 cookie
     'cookie',
     'set-cookie',
-    'session',
     'session_id',
-    'jsessionid',
-    // OAuth 授权码、签名、CAS/SSO 票据、一次性验证码
-    'code',
-    'sign',
-    'signature',
-    'ticket',
-    'otp'
+    'jsessionid'
   ].map(normalizeKey)
 )
+
+/**
+ * 只在 URL（查询串、hash、referrer）里脱敏的键：OAuth 授权码、签名、CAS/SSO 票据、会话、一次性验证码。
+ * 这些键在响应体里常是业务字段（如 {code:0}、{sign:true}），响应体里**不**替换，便于看接口错误、复现问题。
+ */
+export const URL_ONLY_SENSITIVE_KEYS: ReadonlySet<string> = new Set(
+  ['code', 'sign', 'signature', 'ticket', 'session', 'otp'].map(normalizeKey)
+)
+
+const isSensitiveUrlKey = (key: string): boolean => {
+  const k = normalizeKey(key)
+  return SENSITIVE_KEYS.has(k) || URL_ONLY_SENSITIVE_KEYS.has(k)
+}
 
 /** 对 `k=v&k2=v2` 形式的参数串做敏感键替换；返回 null 表示未命中 */
 function redactParamString(qs: string): string | null {
   const params = new URLSearchParams(qs)
   let changed = false
   for (const key of Array.from(new Set(params.keys()))) {
-    if (SENSITIVE_KEYS.has(normalizeKey(key))) {
+    if (isSensitiveUrlKey(key)) {
       params.set(key, '***')
       changed = true
     }
@@ -223,7 +227,7 @@ export function redactSensitiveUrl(url: string): string {
     let changed = false
     const keys = Array.from(new Set(u.searchParams.keys()))
     for (const key of keys) {
-      if (SENSITIVE_KEYS.has(normalizeKey(key))) {
+      if (isSensitiveUrlKey(key)) {
         u.searchParams.set(key, '***')
         changed = true
       }
