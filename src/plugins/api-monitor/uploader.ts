@@ -49,39 +49,54 @@ function base64FromString(s: string): string {
   return base64FromBytes(new TextEncoder().encode(s))
 }
 
+/** 键名归一：去掉 - 和 _ 再小写，accessToken / access-token / ACCESS_TOKEN 都归为 accesstoken */
+const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
+
 /**
- * 凭证类键（小写归一后精确匹配）：**始终**整值替换 ***，不受 apiBodyMaskEnabled 控制，
- * 与 URL 敏感参数（core/utils.ts redactSensitiveUrl）口径一致，另加 pwd、cookie。
+ * 凭证类键（按 normalizeKey 归一后精确匹配）：**始终**整值替换 ***，不受 apiBodyMaskEnabled 控制。
+ * 以 URL 敏感参数（core/utils.ts redactSensitiveUrl）为基础，另加 pwd、cookie、会话标识等明确的凭证键。
  * 凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
  */
-const CREDENTIAL_KEYS = new Set([
-  'token',
-  'access_token',
-  'refresh_token',
-  'id_token',
-  'authorization',
-  'api_key',
-  'apikey',
-  'auth',
-  'secret',
-  'password',
-  'pwd',
-  'cookie'
-])
+const CREDENTIAL_KEYS = new Set(
+  [
+    'token',
+    'access_token',
+    'refresh_token',
+    'id_token',
+    'authorization',
+    'api_key',
+    'apikey',
+    'x-api-key',
+    'auth',
+    'secret',
+    'client_secret',
+    'private_key',
+    'password',
+    'passwd',
+    'pwd',
+    'cookie',
+    'set-cookie',
+    'session',
+    'session_id',
+    'jsessionid'
+  ].map(normalizeKey)
+)
 
 /** 个人信息类键：仅 apiBodyMaskEnabled 为 true 时替换 ***（默认关，原文上传） */
-const PERSONAL_KEYS = new Set(['idcard', 'bankcard', 'phone', 'mobile', 'email'])
+const PERSONAL_KEYS = new Set(
+  ['idcard', 'id_card', 'bankcard', 'bank_card', 'phone', 'mobile', 'email'].map(normalizeKey)
+)
 
-/** 递归深度上限：防环/防病态嵌套打爆栈 */
+/** 递归深度上限：防环/防病态嵌套打爆栈；超过上限的子树整体替换为 ***（不原样放过） */
 const MASK_DEPTH_LIMIT = 8
 
 function maskValue(value: unknown, depth: number, personal: boolean): unknown {
   if (value === null || typeof value !== 'object') return value
-  if (depth >= MASK_DEPTH_LIMIT) return value
+  if (depth >= MASK_DEPTH_LIMIT) return '***'
   if (Array.isArray(value)) return value.map((v) => maskValue(v, depth + 1, personal))
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    const key = k.toLowerCase()
+    const key = normalizeKey(k)
     out[k] =
       CREDENTIAL_KEYS.has(key) || (personal && PERSONAL_KEYS.has(key))
         ? '***'
@@ -90,18 +105,23 @@ function maskValue(value: unknown, depth: number, personal: boolean): unknown {
   return out
 }
 
-/**
- * JSON body 递归脱敏：凭证类键始终替换；personal 为 true（默认，保持导出函数原有口径）时
- * 个人信息类键也替换。非合法 JSON 原样返回（诚实口径，不猜结构）
- */
-export function maskSensitiveBody(raw: string, personal = true): string {
+/** 合法 JSON 才脱敏并返回；解析失败返回 null（上传路径据此丢弃，不原文上传） */
+export function maskJsonBody(raw: string, personal: boolean): string | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return raw
+    return null
   }
-  return JSON.stringify(maskValue(parsed, 0, personal)) ?? raw
+  return JSON.stringify(maskValue(parsed, 0, personal)) ?? null
+}
+
+/**
+ * JSON body 递归脱敏：凭证类键始终替换；personal 为 true（默认，保持导出函数原有口径）时
+ * 个人信息类键也替换。非合法 JSON 原样返回（导出函数保留原口径；上传器不走这条，见 maskJsonBody）
+ */
+export function maskSensitiveBody(raw: string, personal = true): string {
+  return maskJsonBody(raw, personal) ?? raw
 }
 
 /**
@@ -139,7 +159,7 @@ export class ApiBodyUploader {
     this.encodeChain = this.encodeChain
       .then(() => this.encodeBody(raw, eventId))
       .then((payload) => {
-        if (this.stopped) return
+        if (this.stopped || payload === null) return
         this.outbox.push({ payload, attempts: 0 })
         this.pump()
       })
@@ -159,9 +179,14 @@ export class ApiBodyUploader {
     this.opts.log?.(...args)
   }
 
-  private async encodeBody(raw: string, eventId: string): Promise<ApiBodyPayload> {
-    // 凭证类键始终脱敏；个人信息类键由 maskEnabled（apiBodyMaskEnabled）控制
-    const body = maskSensitiveBody(raw, this.opts.maskEnabled)
+  private async encodeBody(raw: string, eventId: string): Promise<ApiBodyPayload | null> {
+    // 凭证类键始终脱敏；个人信息类键由 maskEnabled（apiBodyMaskEnabled）控制。
+    // 解析失败不上传（插件侧已标 body_skipped=unparsable，这里是兜底）
+    const body = maskJsonBody(raw, this.opts.maskEnabled)
+    if (body === null) {
+      this.log(`api-body event_id=${eventId} 不是合法 JSON，丢弃`)
+      return null
+    }
     let gzip = false
     let encoded: string
     if (this.opts.gzip) {

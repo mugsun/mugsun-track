@@ -62,7 +62,7 @@ describe('selfCheck', () => {
     const t = createTestClient({ apiBodyEnabled: true }, { ping: okPing })
     const p = item(await t.client.selfCheck(), 'privacy')
     expect(p?.status).toBe('warn')
-    expect(p?.message).toContain('响应体采集已开启且未脱敏')
+    expect(p?.message).toContain('个人信息字段未脱敏')
     const on = createTestClient(
       { apiBodyEnabled: true, apiBodyMaskEnabled: true },
       { ping: okPing }

@@ -595,6 +595,76 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
 
 // ---------------------------------------------------------------- 默认配置下仍生效的保护（回归）
 
+describe('凭证键归一、非法 JSON、超深嵌套（安全复核 R2）', () => {
+  it('驼峰 / 短横线 / 大写形式的凭证键在默认配置下也替换 ***', async () => {
+    const cap = captureBodySend()
+    const body = {
+      accessToken: 'a',
+      refreshToken: 'r',
+      'id-token': 'i',
+      client_secret: 'c',
+      clientSecret: 'c2',
+      'Set-Cookie': 'sid=1',
+      sessionId: 's',
+      session: { id: 's2' },
+      JSESSIONID: 'j',
+      'X-Api-Key': 'k',
+      privateKey: 'p',
+      passwd: 'pw',
+      userName: 'kept'
+    }
+    window.fetch = (async () => jsonResponse(JSON.stringify(body))) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    const d = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    for (const k of Object.keys(body).filter((k) => k !== 'userName')) expect(d[k]).toBe('***')
+    expect(d.userName).toBe('kept')
+    t.client.destroy()
+  })
+
+  it('content-type 是 JSON 但解析失败：不上传响应体，标 body_skipped=unparsable', async () => {
+    const cap = captureBodySend()
+    window.fetch = (async () => jsonResponse('{"token":"leak-me", oops')) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    await t.client.flush()
+    expect(cap.calls).toHaveLength(0)
+    const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
+    expect(ev?.props.body_skipped).toBe('unparsable')
+    expect(ev?.props.body_ref).toBeUndefined()
+    t.client.destroy()
+  })
+
+  it('ApiBodyUploader 直接收到非法 JSON 时也丢弃（兜底）', async () => {
+    const cap = captureBodySend()
+    const up = new ApiBodyUploader({ appKey: 'app', send: cap.send, gzip: fakeGzip })
+    up.push('token=leak-me', 'e1')
+    await settle()
+    expect(cap.calls).toHaveLength(0)
+    up.destroy()
+  })
+
+  it('超过 8 层的子树整体替换为 ***', () => {
+    let deep: Record<string, unknown> = { tokenish: 'x', refresh_token: 'r' }
+    for (let i = 0; i < 10; i++) deep = { level: deep }
+    const out = JSON.parse(maskSensitiveBody(JSON.stringify(deep), false)) as Record<
+      string,
+      unknown
+    >
+    let node: unknown = out
+    let depth = 0
+    while (node && typeof node === 'object') {
+      node = (node as Record<string, unknown>).level
+      depth++
+    }
+    expect(node).toBe('***')
+    expect(depth).toBe(8)
+    expect(JSON.stringify(out)).not.toContain('"r"')
+  })
+})
+
 describe('ApiBodyUploader 默认值', () => {
   it('不传 maskEnabled：个人信息键原文，凭证键 ***', async () => {
     const cap = captureBodySend()
