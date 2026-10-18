@@ -178,8 +178,8 @@ describe('页面 URL / referrer / 链接 / 资源地址脱敏', () => {
   })
 })
 
-describe('响应体凭证键补充（只加明确的凭证）', () => {
-  it('jwt / otp / accessKey / secret_key 替换；code / sign / ticket 等业务字段保留', async () => {
+describe('URL 与响应体共用一份敏感键清单（R3-1）', () => {
+  it('jwt / otp / accessKey / secret_key 以及 code / sign / signature / ticket 在响应体里都替换', async () => {
     const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
     const out = JSON.parse(
       maskSensitiveBody(
@@ -188,23 +188,53 @@ describe('响应体凭证键补充（只加明确的凭证）', () => {
           otp: '123456',
           accessKey: 'ak',
           secret_key: 'sk',
-          code: 0,
-          sign: 'ok',
+          code: 'oauth-code',
+          sign: 's',
           ticket: { id: 1 },
-          signature: 'Zhang San'
+          signature: 'sig',
+          client_secret: 'c',
+          session_id: 's1',
+          'X-Api-Key': 'k'
         }),
         false
       )
     ) as Record<string, unknown>
-    expect(out).toEqual({
-      jwt: '***',
-      otp: '***',
-      accessKey: '***',
-      secret_key: '***',
-      code: 0,
-      sign: 'ok',
-      ticket: { id: 1 },
-      signature: 'Zhang San'
-    })
+    for (const v of Object.values(out)) expect(v).toBe('***')
+  })
+
+  it('取舍：业务响应 {code:0,msg} 里的 code 也被替换为 ***，msg 和 data 保留', async () => {
+    const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
+    const out = JSON.parse(
+      maskSensitiveBody(JSON.stringify({ code: 0, msg: 'ok', data: { id: 7, sign: true } }), false)
+    ) as Record<string, unknown>
+    expect(out).toEqual({ code: '***', msg: 'ok', data: { id: 7, sign: '***' } })
+  })
+
+  it('归一后精确匹配，不做子串匹配：codeType / errCode / signedAt / ticketCount / sessionTimeout 保留', async () => {
+    const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
+    const body = { codeType: 1, errCode: 500, signedAt: 't', ticketCount: 3, sessionTimeout: 30 }
+    expect(JSON.parse(maskSensitiveBody(JSON.stringify(body), false))).toEqual(body)
+    expect(redactSensitiveUrl('/x?codeType=1&errCode=500&signedAt=t&ticketCount=3')).toBe(
+      '/x?codeType=1&errCode=500&signedAt=t&ticketCount=3'
+    )
+  })
+
+  it('清单里每个键在 URL 和响应体里结果一致', async () => {
+    const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
+    const { SENSITIVE_KEYS } = await import('../src/core/utils')
+    for (const k of SENSITIVE_KEYS) {
+      expect(redactSensitiveUrl(`/x?${k}=v`)).toBe(`/x?${k}=***`)
+      expect(JSON.parse(maskSensitiveBody(JSON.stringify({ [k]: 'v' }), false))).toEqual({
+        [k]: '***'
+      })
+    }
+  })
+})
+
+describe('maskSensitiveBody 解析失败不返回原文（P4）', () => {
+  it('非法 JSON 整体返回 ***', async () => {
+    const { maskSensitiveBody } = await import('../src/plugins/api-monitor/uploader')
+    expect(maskSensitiveBody('{"token":"leak-me", oops')).toBe('***')
+    expect(maskSensitiveBody('token=leak-me', false)).toBe('***')
   })
 })

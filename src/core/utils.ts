@@ -134,25 +134,47 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
  */
 export const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
 
-/** 上报 URL 敏感 query / hash 参数键（normalizeKey 归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
-const SENSITIVE_QUERY_KEYS = new Set(
+/**
+ * 敏感键清单：URL 查询 / hash 参数与响应体 JSON 键**共用这一份**（安全复核 R3-1）。
+ * 按 normalizeKey 归一后精确匹配，不做子串匹配（tokenCount、sessionTimeout、codeType 都不算）。
+ * 命中则值整值替换为 ***；响应体里不受 apiBodyMaskEnabled 控制。
+ * 取舍：code / sign / signature / ticket 在响应体里常是业务字段（如 {code:0}），也会被替换；
+ * 按复核决定宁可误伤也不漏凭证。
+ */
+export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
   [
+    // 令牌与鉴权头
     'token',
     'access_token',
-    'authorization',
-    'id_token',
     'refresh_token',
+    'id_token',
+    'authorization',
+    'auth',
+    'jwt',
+    // API key 与密钥
     'api_key',
     'apikey',
-    'auth',
+    'x-api-key',
     'secret',
+    'client_secret',
+    'private_key',
+    'access_key',
+    'secret_key',
+    // 口令
     'password',
-    // 凭证类补充：OAuth 授权码、签名、CAS/SSO 票据、会话标识、一次性验证码
+    'passwd',
+    'pwd',
+    // 会话与 cookie
+    'cookie',
+    'set-cookie',
+    'session',
+    'session_id',
+    'jsessionid',
+    // OAuth 授权码、签名、CAS/SSO 票据、一次性验证码
     'code',
     'sign',
     'signature',
     'ticket',
-    'session',
     'otp'
   ].map(normalizeKey)
 )
@@ -162,7 +184,7 @@ function redactParamString(qs: string): string | null {
   const params = new URLSearchParams(qs)
   let changed = false
   for (const key of Array.from(new Set(params.keys()))) {
-    if (SENSITIVE_QUERY_KEYS.has(normalizeKey(key))) {
+    if (SENSITIVE_KEYS.has(normalizeKey(key))) {
       params.set(key, '***')
       changed = true
     }
@@ -201,7 +223,7 @@ export function redactSensitiveUrl(url: string): string {
     let changed = false
     const keys = Array.from(new Set(u.searchParams.keys()))
     for (const key of keys) {
-      if (SENSITIVE_QUERY_KEYS.has(normalizeKey(key))) {
+      if (SENSITIVE_KEYS.has(normalizeKey(key))) {
         u.searchParams.set(key, '***')
         changed = true
       }

@@ -24,13 +24,14 @@
 - **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）」；回放已加载但没有设 `maskTextSelector` 或 `maskAllInputs: true` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
 - **尊重 Global Privacy Control**：新增 `respectGpc` 选项，默认 `true`，与 `respectDnt` 一致。浏览器 `navigator.globalPrivacyControl === true` 时 SDK 停用，`selfCheck()` 的 consent 项提示。只影响开启 GPC 的用户；调试可设 `respectGpc: false`。
 - **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
+- **URL 与响应体共用一份敏感键清单**：响应体里 `code`、`sign`、`signature`、`ticket`、`otp`、`jwt`、`access_key`、`secret_key` 现在也替换为 `***`，URL 里 `client_secret`、`session_id`、`x-api-key`、`private_key`、`cookie`、`pwd` 等也替换。归一后精确匹配，不做子串匹配（`codeType`、`errCode`、`ticketCount` 保留）。**注意**：业务响应 `{"code":0,"msg":"ok"}` 里的 `code` 也会变成 `***`，响应体分析里按 `code` 区分业务结果的口径会失效，需要业务结果码时用 `trackApiError({ bizCode })` 上报（事件属性 `biz_code`），或在接口里换个键名。
 - **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复
 
 - **页面 URL 与 referrer 脱敏**：公共属性 `referrer`（`$pageview`、`$session_start` 等所有事件都带）、自动采集的链接 `href`、资源加载错误的 `resource_url`、回放 rrweb Meta 事件里的 `href`，此前都是原文，现在都经过 URL 敏感参数脱敏。`url_path` 本来就只有 pathname，不含 query 和 hash。
-- **响应体凭证键补充**：`jwt`、`otp`、`access_key`、`secret_key`。URL 清单里新加的 `code`、`sign`、`signature`、`ticket` 在响应体里常是业务字段（错误码、签名开关、工单对象），不纳入响应体清单。
+- **`maskSensitiveBody` 解析失败不再返回原文**：导出函数遇到非法 JSON 时整体返回 `***`。原文可能就是凭证（如 `token=...` 形式的文本）。上传器本来就丢弃这类响应体，行为不变。
 
 - 错误堆栈清洗：① 帧 URL 去掉 query / hash（常带 token、签名），保留 `:行:列`，错误指纹也按去掉后的堆栈计算，同一错误不会因 token 不同被拆成多组；② props 总量超过 16KB 时先缩 `stack`（按 UTF-8 字节），不再让服务端从尾部摘掉其它属性，4096 个中文字符的堆栈约 12KB，加上其它属性很容易超限；③ 截断不再拆开 emoji 等代理对
 
