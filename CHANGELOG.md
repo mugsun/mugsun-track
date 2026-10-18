@@ -6,9 +6,22 @@
 
 > 计划版本：**0.3.0**（minor，含下方行为变更）。本 PR 不改 `package.json` 版本号，避免合入即触发自动发布；发版另走版本 PR。
 
+> **升级提示**：如果你靠 0.2.0 的默认遮罩满足合规要求，升级后必须显式配置 `replayPlugin({ maskTextSelector: '*', maskAllInputs: true })` 和 `apiBodyMaskEnabled: true`，否则回放会录页面文本和输入框的原值，响应体里的个人信息字段会原文上传。
+>
+> 注意远端配置：mugsun-boot 的 `track_app.api_body_mask_enabled` 默认是 `0`，`/track/config` 会下发 `apiBodyMaskEnabled: false`。本地没有设置 `apiBodyMaskEnabled` 时，SDK 用远端值（下次启动生效），所以即使在 0.2.0，开了远端配置的应用实际也不脱敏。想确保脱敏，就在本地显式设 `apiBodyMaskEnabled: true`（本地显式设置优先于远端），或在管理后台打开「响应体脱敏」。
+
 ### 行为变更
 
-- **`skipHandledErrors` 默认 `true`**：error 插件（window error / unhandledrejection）与 Vue errorHandler 默认不再上报 `name === 'HttpError'` 及 `handled === true` / `expected === true` 的错误。升级后 `$error` 数量可能下降；需要旧行为请设 `skipHandledErrors: false`，或用 `trackApiError` 单独统计接口失败。
+- **会话回放默认不遮罩页面文本**：`replayPlugin` 的 `maskTextSelector` 默认不再是 `'*'`，回放里显示原文（0.2.0 起默认遮全页文本）。需要遮罩请显式传 `replayPlugin({ maskTextSelector: '*' })` 或更窄的选择器。
+- **会话回放默认不遮罩输入值**：新增 `replayPlugin({ maskAllInputs })` 选项，默认 `false`，输入框的值录原文（0.2.0 固定为 `true`，所有输入值录成 `***`）。想保持 0.2.0 的行为请设 `maskAllInputs: true`。
+- **回放始终不录的字段**（不论上面两个选项）：`input[type="password"]`、`data-track-mask` 与 `maskSelectors` 命中的区域、银行卡字段（`autocomplete` 以 `cc-` 开头）、一次性验证码字段（`autocomplete="one-time-code"`）整块不录，canvas 不录。银行卡和一次性验证码是新增的。密码框另外通过 rrweb 的 `maskInputOptions: { password: true }` 兜底。
+- **`apiBodyMaskEnabled` 默认改为 `false`，响应体脱敏拆成两层**（api-body 上传器内部的 `maskEnabled` 同步默认 `false`）：
+  - 凭证类键 **始终** 替换为 `***`，不受开关控制：`token`、`access_token`、`refresh_token`、`id_token`、`authorization`、`api_key`、`apikey`、`x-api-key`、`auth`、`secret`、`client_secret`、`private_key`、`password`、`passwd`、`pwd`、`cookie`、`set-cookie`、`session`、`session_id`、`jsessionid`。键名先去掉 `-`、`_` 再小写后匹配，所以 `accessToken`、`Access-Token`、`ACCESS_TOKEN`、`sessionId` 都算。0.2.0 的清单只有 `token` 等少数几个键，而且只做小写匹配，现在会多替换一些键。
+  - 个人信息类键（`phone`、`mobile`、`email`、`idcard`、`bankcard`）由 `apiBodyMaskEnabled` 控制，默认原文上传（0.2.0 默认脱敏）。需要脱敏请显式设 `apiBodyMaskEnabled: true`，或远端下发 `1`。
+  - 导出的 `maskSensitiveBody(raw, personal = true)` 新增第二个参数，不传时与原来一样两类都替换。
+  - content-type 为 JSON 但内容解析失败时，不上传响应体，事件标 `body_skipped: 'unparsable'`（此前会原文上传）。非 JSON 的 content-type 本来就不采集。嵌套超过 8 层的子树整体替换为 `***`（此前原样保留）。凭证端点（`/auth/login` 等）的响应体仍然一律不采集。
+- **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
+- **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）」；回放已加载但没有设 `maskTextSelector` 或 `maskAllInputs: true` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复
@@ -18,6 +31,10 @@
 - 回放收尾块丢失：pagehide 时原来把剩余缓冲（最多 10MB）合成一个明文块用 beacon 发出，超过 sendBeacon 的 64KB 限额或服务端单块上限（明文约 1.07MB）就整块丢失。现在：① 页面转后台（`visibilitychange → hidden`）时先把缓冲走 gzip 管道，以 beacon / fetch keepalive 发出，移动端切后台也能覆盖；② pagehide 剩余部分按 32KB 明文拆块；sendBeacon 与 fetch keepalive 共用每个文档约 64KB 的在途额度，pagehide 时普通事件的收尾 beacon 和仍在途的回放块也占这份额度，所以回放收尾块合计请求体不超过 44KB，第一块放不下即停止，丢弃更晚的事件并记日志（放不下的块先按字节估算，不做 base64 编码）；转后台块的 gzip 还没完成页面就卸载时，改为同步明文发出（沿用原 seq），压缩结果作废，不会重复发送；③ 普通切块也按 1MB 明文拆分，避免触发服务端的 413
 
 - 错误堆栈：`sanitizeProps` 对顶层 `stack` 放宽到 4096 字符，与 error 插件的截断和服务端（mugsun-boot `PROPS_STACK_MAX_LEN`）一致。之前所有字符串一律截到 1024，`$error` 的堆栈实际只剩 1024 字符；其它字符串属性仍是 1024
+
+- URL 敏感参数与响应体凭证键改用同一个键名归一（去掉 `-`、`_` 后小写，再精确匹配）。此前 URL 只做小写，`?accessToken=`、`?Refresh-Token=` 不会被识别；`tokenCount`、`passwordHint`、`sessionTimeout` 这类键依旧保留原值。
+
+- 响应体只 `JSON.parse` 一次：插件判定可解析后把解析结果直接交给上传器脱敏，不再解析两遍。
 
 - endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`
 

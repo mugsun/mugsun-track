@@ -16,7 +16,9 @@ import { ReplayRecorder, type ReplayChunkPayload } from './recorder'
 export interface ReplayRecordOptions {
   emit: (event: unknown, isCheckout?: boolean) => void
   maskAllInputs: boolean
-  /** 页面文本遮罩选择器；默认由插件传 '*' */
+  /** rrweb maskInputOptions：插件始终传 { password: true } */
+  maskInputOptions?: Record<string, boolean>
+  /** 页面文本遮罩选择器；默认不传（录原文） */
   maskTextSelector?: string
   blockSelector: string
   recordCanvas: boolean
@@ -46,9 +48,15 @@ export interface ReplayPluginOptions {
   checkoutEveryNms?: number | false
   /**
    * 页面文本遮罩选择器（rrweb maskTextSelector）。
-   * 默认 '*'（遮全页文本，与隐私文档对齐）；传 false 关闭文本遮罩（仅调试）。
+   * 默认不遮罩（录原文）；传 '*' 遮全页文本，或传更窄的选择器只遮部分区域。false 与不传等价。
    */
   maskTextSelector?: string | false
+  /**
+   * 遮罩所有输入框的值（rrweb maskAllInputs）。默认 false（录原值）；设 true 时所有输入值录成 ***。
+   * 不论取值，password、data-track-mask、银行卡（autocomplete=cc-*）、一次性验证码（autocomplete=one-time-code）
+   * 字段始终整块不录，canvas 始终不录
+   */
+  maskAllInputs?: boolean
   /** 测试注入：替代 rrweb.record（不引真实 DOM 录制） */
   record?: ReplayRecordFn
   /** 测试注入：发送实现（默认内置 beacon→fetch→XHR 降级链，独立通道不占事件队列） */
@@ -60,8 +68,16 @@ export interface ReplayPluginOptions {
 /** 默认每 3 分钟一次全量快照（rrweb checkoutEveryNms） */
 export const DEFAULT_CHECKOUT_EVERY_MS = 3 * 60 * 1000
 
-/** 内置整块屏蔽：password 与平台统一敏感标记（与自动采集同一口径） */
-const ALWAYS_BLOCK = 'input[type="password"], [data-track-mask]'
+/**
+ * 内置整块屏蔽（rrweb blockSelector，不可关）：password、平台统一敏感标记，
+ * 以及银行卡（autocomplete=cc-*）和一次性验证码（autocomplete=one-time-code）字段
+ */
+const ALWAYS_BLOCK = [
+  'input[type="password"]',
+  '[data-track-mask]',
+  '[autocomplete^="cc-"]',
+  '[autocomplete="one-time-code"]'
+].join(', ')
 
 /** 默认发送：独立 Transport（不复用事件队列）；压缩在 payload 字段级完成，传输层不再二次 gzip */
 function createDefaultSend(options: ResolvedTrackOptions) {
@@ -140,7 +156,9 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
       // 挂载点：供调试/测试手动控制（正常路径由内部钩子自动触发）
       const controller: ReplayController = {
         forceUpload: () => recorder.forceUpload(),
-        flushFinal: () => recorder.flushFinal()
+        flushFinal: () => recorder.flushFinal(),
+        textMasked: Boolean(pluginOpts.maskTextSelector),
+        inputsMasked: pluginOpts.maskAllInputs === true
       }
       client.replay = controller
 
@@ -161,12 +179,14 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
           if (destroyed) return
           stopRecord = record({
             emit: (event) => recorder.push(event),
-            // 隐私默认最严：所有输入值 ***；页面文本默认 maskTextSelector='*'（可显式 false 关闭）；
-            // password 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas
-            maskAllInputs: true,
-            ...(pluginOpts.maskTextSelector === false
-              ? {}
-              : { maskTextSelector: pluginOpts.maskTextSelector ?? '*' }),
+            // 输入值与页面文本默认录原文（maskAllInputs / maskTextSelector 由接入方开启）；
+            // password 另经 maskInputOptions 兜底；password、data-track-mask、cc-*、one-time-code
+            // 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas
+            maskAllInputs: pluginOpts.maskAllInputs === true,
+            maskInputOptions: { password: true },
+            ...(pluginOpts.maskTextSelector
+              ? { maskTextSelector: pluginOpts.maskTextSelector }
+              : {}),
             blockSelector: [ALWAYS_BLOCK, ...options.maskSelectors].join(', '),
             recordCanvas: false,
             ...(pluginOpts.checkoutEveryNms === false

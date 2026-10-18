@@ -232,6 +232,8 @@ export class TrackClient {
         sampled: this.sampled,
         queueSize: this.queue.size,
         replayLoaded: this.replay !== null,
+        replayTextMasked: this.replay?.textMasked ?? false,
+        replayInputsMasked: this.replay?.inputsMasked ?? false,
         pluginNames: this.options.plugins.map((p) => p.name)
       },
       this.ping,

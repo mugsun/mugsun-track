@@ -64,6 +64,18 @@ interface UrlInfo {
 type BodyAction = 'collect' | 'size' | 'credential' | 'skip'
 
 /**
+ * 解析声明为 JSON 的响应体：失败返回 undefined（不上传 body，标 body_skipped=unparsable）。
+ * 解析结果交给 uploader 直接脱敏，整条链路只 JSON.parse 一次。
+ */
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * api_request：fetch / XHR 包装监控（G102）。
  * - 启停由 apiMonitorEnabled 控制（本地显式设置优先，否则远端下发，默认关）；关则不包装
  * - url 保留查询串但剥离敏感键（token/access_token 等 → ***）：事件名固定、url 只在 props 不进维度索引；业务参数保留便于排障
@@ -89,7 +101,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
             appKey: options.appKey,
             send: pluginOpts.send ?? createDefaultSend(options),
             gzip: pluginOpts.gzip === null ? undefined : (pluginOpts.gzip ?? createDefaultGzip()),
-            maskEnabled: options.apiBodyMaskEnabled ?? true,
+            maskEnabled: options.apiBodyMaskEnabled ?? false,
             maxRetries: pluginOpts.maxRetries,
             retryBaseDelay: options.retryBaseDelay,
             retryMaxDelay: options.retryMaxDelay,
@@ -137,7 +149,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
         error_message?: string
         response_size?: number
         body_ref?: string
-        body_skipped?: 'size' | 'credential'
+        body_skipped?: 'size' | 'credential' | 'unparsable'
       }
 
       /** 事件元数据上报（进正常事件队列；page 关联 url_path/route_path 走 core 公共属性机制） */
@@ -166,6 +178,11 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           report({ ...base, response_size: size, body_skipped: 'size' })
           return
         }
+        const parsed = parseJson(text)
+        if (parsed === undefined) {
+          report({ ...base, response_size: size, body_skipped: 'unparsable' })
+          return
+        }
         const eventId = uuid()
         const tracked = client.track(
           'api_request',
@@ -177,7 +194,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           },
           { eventId }
         )
-        if (tracked) uploader?.push(text, tracked)
+        if (tracked) uploader?.push(text, tracked, parsed)
       }
 
       const teardowns: Array<() => void> = []

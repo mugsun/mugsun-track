@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiMonitorPlugin, type ApiMonitorPluginOptions } from '../src/plugins/api-monitor'
-import type { ApiBodyPayload, ApiBodySendOutcome } from '../src/plugins/api-monitor/uploader'
+import {
+  ApiBodyUploader,
+  maskSensitiveBody,
+  type ApiBodyPayload,
+  type ApiBodySendOutcome
+} from '../src/plugins/api-monitor/uploader'
+import { normalizeKey, redactSensitiveUrl } from '../src/core/utils'
 import type { TrackOptions } from '../src/types'
 import { allEvents, createTestClient, destroyAllClients, type TestClient } from './helpers'
 
@@ -251,6 +257,22 @@ describe('api-monitor URL 敏感 query 脱敏', () => {
     await t.client.flush()
     const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
     expect(ev?.props.url).toBe('https://api.example.com/orders?api_key=***&source=app')
+  })
+
+  it('URL 键与响应体键同一归一口径：accessToken、Refresh-Token 也替换', () => {
+    expect(
+      redactSensitiveUrl(
+        'https://api.example.com/cb?accessToken=a1&Refresh-Token=r1&ID_TOKEN=i1&page=2'
+      )
+    ).toBe('https://api.example.com/cb?accessToken=***&Refresh-Token=***&ID_TOKEN=***&page=2')
+    expect(normalizeKey('Refresh-Token')).toBe(normalizeKey('refresh_token'))
+  })
+
+  it('归一后精确匹配，不做子串匹配：tokenCount / passwordHint / sessionTimeout 原样保留', () => {
+    const url = 'https://api.example.com/x?tokenCount=3&passwordHint=pet&sessionTimeout=30&token=t'
+    expect(redactSensitiveUrl(url)).toBe(
+      'https://api.example.com/x?tokenCount=3&passwordHint=pet&sessionTimeout=30&token=***'
+    )
   })
 
   it('无敏感键时 URL 原样保留', async () => {
@@ -531,7 +553,7 @@ describe('api-body 独立上传通道（不占事件队列）', () => {
 
 // ---------------------------------------------------------------- ⑨ 业务字段脱敏
 
-describe('api-body 脱敏（apiBodyMaskEnabled，默认开）', () => {
+describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
   const BODY = JSON.stringify({
     password: 'p1',
     user: { phone: '13800000000', name: '张三', Token: 't-1' },
@@ -539,11 +561,28 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认开）', () => {
     ok: true
   })
 
-  it('默认开启：键清单命中（大小写不敏感）替换 ***，对象/数组递归', async () => {
+  it('默认关闭：不传 apiBodyMaskEnabled 时原文上传', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
-    // 不显式传 apiBodyMaskEnabled：插件兜底默认 true
+    // 不显式传 apiBodyMaskEnabled：插件兜底默认 false，个人信息键原文，凭证键仍 ***
     const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    await window.fetch('https://api.example.com/me')
+    await settle()
+    expect(cap.calls).toHaveLength(1)
+    const decoded = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    expect(decoded.password).toBe('***')
+    expect(decoded.user).toEqual({ phone: '13800000000', name: '张三', Token: '***' })
+    expect(decoded.list).toEqual([{ email: 'a@b.c', id: 1 }, 'x'])
+    t.client.destroy()
+  })
+
+  it('显式开启：键清单命中（大小写不敏感）替换 ***，对象/数组递归', async () => {
+    const cap = captureBodySend()
+    window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
+    const t = setup(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: true },
+      { send: cap.send, gzip: fakeGzip }
+    )
     await window.fetch('https://api.example.com/me')
     await settle()
     expect(cap.calls).toHaveLength(1)
@@ -555,7 +594,7 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认开）', () => {
     t.client.destroy()
   })
 
-  it('显式关闭：原文上传不脱敏', async () => {
+  it('显式关闭：个人信息键原文上传，凭证键仍替换 ***', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
     const t = setup(
@@ -564,7 +603,204 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认开）', () => {
     )
     await window.fetch('https://api.example.com/me')
     await settle()
-    expect(decodeBody(cap.calls[0].payload)).toBe(BODY)
+    const decoded = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    expect(decoded.password).toBe('***')
+    expect(decoded.user).toEqual({ phone: '13800000000', name: '张三', Token: '***' })
+    t.client.destroy()
+  })
+})
+
+// ---------------------------------------------------------------- 默认配置下仍生效的保护（回归）
+
+describe('凭证键归一、非法 JSON、超深嵌套（安全复核 R2）', () => {
+  it('驼峰 / 短横线 / 大写形式的凭证键在默认配置下也替换 ***', async () => {
+    const cap = captureBodySend()
+    const body = {
+      accessToken: 'a',
+      refreshToken: 'r',
+      'id-token': 'i',
+      client_secret: 'c',
+      clientSecret: 'c2',
+      'Set-Cookie': 'sid=1',
+      sessionId: 's',
+      session: { id: 's2' },
+      JSESSIONID: 'j',
+      'X-Api-Key': 'k',
+      privateKey: 'p',
+      passwd: 'pw',
+      userName: 'kept'
+    }
+    window.fetch = (async () => jsonResponse(JSON.stringify(body))) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    const d = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    for (const k of Object.keys(body).filter((k) => k !== 'userName')) expect(d[k]).toBe('***')
+    expect(d.userName).toBe('kept')
+    t.client.destroy()
+  })
+
+  it('归一后精确匹配：tokenCount / passwordHint / sessionTimeout 保留原值（session 在清单里也不影响）', () => {
+    const out = JSON.parse(
+      maskSensitiveBody(
+        JSON.stringify({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: 's' }),
+        false
+      )
+    ) as Record<string, unknown>
+    expect(out).toEqual({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: '***' })
+  })
+
+  it('响应体整条链路只 JSON.parse 一次', async () => {
+    const cap = captureBodySend()
+    const text = JSON.stringify({ marker: 'parse-once-7f3a', token: 't' })
+    window.fetch = (async () => jsonResponse(text)) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    const spy = vi.spyOn(JSON, 'parse')
+    try {
+      await window.fetch('https://api.example.com/user/info')
+      await settle()
+      expect(spy.mock.calls.filter((c) => c[0] === text)).toHaveLength(1)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(JSON.parse(decodeBody(cap.calls[0].payload))).toEqual({
+      marker: 'parse-once-7f3a',
+      token: '***'
+    })
+    t.client.destroy()
+  })
+
+  it('content-type 是 JSON 但解析失败：不上传响应体，标 body_skipped=unparsable', async () => {
+    const cap = captureBodySend()
+    window.fetch = (async () => jsonResponse('{"token":"leak-me", oops')) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    await t.client.flush()
+    expect(cap.calls).toHaveLength(0)
+    const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
+    expect(ev?.props.body_skipped).toBe('unparsable')
+    expect(ev?.props.body_ref).toBeUndefined()
+    t.client.destroy()
+  })
+
+  it('ApiBodyUploader 直接收到非法 JSON 时也丢弃（兜底）', async () => {
+    const cap = captureBodySend()
+    const up = new ApiBodyUploader({ appKey: 'app', send: cap.send, gzip: fakeGzip })
+    up.push('token=leak-me', 'e1')
+    await settle()
+    expect(cap.calls).toHaveLength(0)
+    up.destroy()
+  })
+
+  it('超过 8 层的子树整体替换为 ***', () => {
+    let deep: Record<string, unknown> = { tokenish: 'x', refresh_token: 'r' }
+    for (let i = 0; i < 10; i++) deep = { level: deep }
+    const out = JSON.parse(maskSensitiveBody(JSON.stringify(deep), false)) as Record<
+      string,
+      unknown
+    >
+    let node: unknown = out
+    let depth = 0
+    while (node && typeof node === 'object') {
+      node = (node as Record<string, unknown>).level
+      depth++
+    }
+    expect(node).toBe('***')
+    expect(depth).toBe(8)
+    expect(JSON.stringify(out)).not.toContain('"r"')
+  })
+})
+
+describe('ApiBodyUploader 默认值', () => {
+  it('不传 maskEnabled：个人信息键原文，凭证键 ***', async () => {
+    const cap = captureBodySend()
+    const up = new ApiBodyUploader({ appKey: 'app', send: cap.send, gzip: fakeGzip })
+    up.push(JSON.stringify({ phone: '13800000000', refresh_token: 'r', email: 'a@b.c' }), 'e1')
+    await settle()
+    expect(JSON.parse(decodeBody(cap.calls[0].payload))).toEqual({
+      phone: '13800000000',
+      refresh_token: '***',
+      email: 'a@b.c'
+    })
+    up.destroy()
+  })
+
+  it('maskSensitiveBody 不传第二个参数时保持原口径（两类都替换）', () => {
+    expect(JSON.parse(maskSensitiveBody('{"phone":"1","token":"t","id":2}'))).toEqual({
+      phone: '***',
+      token: '***',
+      id: 2
+    })
+    expect(JSON.parse(maskSensitiveBody('{"phone":"1","token":"t"}', false))).toEqual({
+      phone: '1',
+      token: '***'
+    })
+  })
+})
+
+describe('默认配置下仍生效的保护（回归）', () => {
+  it('默认配置：登录/凭证端点的响应体不上传', async () => {
+    const cap = captureBodySend()
+    window.fetch = (async () =>
+      jsonResponse('{"access_token":"jwt-abc","refresh_token":"jwt-def"}')) as typeof fetch
+    // 只开响应体采集，其余（含 apiBodyMaskEnabled）全部走默认
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    expect(t.client.options.apiBodyMaskEnabled).toBeUndefined()
+    await window.fetch('https://api.example.com/auth/login', { method: 'POST' })
+    await window.fetch('https://api.example.com/oauth/token', { method: 'POST' })
+    await settle()
+    await t.client.flush()
+    expect(cap.calls).toHaveLength(0)
+    const evs = allEvents(t.sent).filter((e) => e.event === 'api_request')
+    expect(evs.map((e) => e.props.body_skipped)).toEqual(['credential', 'credential'])
+    t.client.destroy()
+  })
+
+  it('默认配置：URL 里的 refresh_token 查询参数替换为 ***', async () => {
+    window.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
+    const t = setup()
+    await window.fetch('https://api.example.com/session?refresh_token=r-secret-1&page=1')
+    await t.client.flush()
+    const url = String(allEvents(t.sent).find((e) => e.event === 'api_request')?.props.url)
+    expect(url).toMatch(/refresh_token=\*\*\*/)
+    expect(url).toContain('page=1')
+    expect(url).not.toContain('r-secret-1')
+    t.client.destroy()
+  })
+
+  it('apiBodyMaskEnabled=false 时，非凭证端点响应体里的凭证键也始终 ***', async () => {
+    const cap = captureBodySend()
+    const body = {
+      access_token: 'a',
+      refresh_token: 'r',
+      id_token: 'i',
+      token: 't',
+      password: 'p',
+      pwd: 'p2',
+      secret: 's',
+      authorization: 'Bearer x',
+      cookie: 'sid=1',
+      api_key: 'k',
+      apikey: 'k2',
+      auth: { user: 'u' },
+      nested: [{ Refresh_Token: 'r2', phone: '13800000000' }],
+      ok: 1
+    }
+    window.fetch = (async () => jsonResponse(JSON.stringify(body))) as typeof fetch
+    const t = setup(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: false },
+      { send: cap.send, gzip: fakeGzip }
+    )
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    expect(cap.calls).toHaveLength(1)
+    const d = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    for (const k of Object.keys(body).filter((k) => k !== 'nested' && k !== 'ok')) {
+      expect(d[k]).toBe('***')
+    }
+    expect(d.nested).toEqual([{ Refresh_Token: '***', phone: '13800000000' }])
+    expect(d.ok).toBe(1)
     t.client.destroy()
   })
 })

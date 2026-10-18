@@ -534,14 +534,43 @@ describe('replay 插件', () => {
     expect(allEvents(t.sent).map((e) => e.event)).toContain('biz_event')
   })
 
-  it('record 隐私选项：maskAllInputs、默认 maskTextSelector=*、blockSelector、不采 canvas', () => {
+  it('record 隐私选项：默认输入值与页面文本录原文；password / data-track-mask / cc-* / one-time-code 始终整块不录；不采 canvas', () => {
     const { stub } = setup({ maskSelectors: ['.secret'] })
     expect(stub.calls).toHaveLength(1)
     const opts = stub.calls[0]
-    expect(opts.maskAllInputs).toBe(true)
-    expect(opts.maskTextSelector).toBe('*')
-    expect(opts.blockSelector).toBe('input[type="password"], [data-track-mask], .secret')
+    expect(opts.maskAllInputs).toBe(false)
+    // maskAllInputs=false 时 password 仍由 maskInputOptions 兜底，且整块不录
+    expect(opts.maskInputOptions).toEqual({ password: true })
+    expect('maskTextSelector' in opts).toBe(false)
+    expect(opts.blockSelector).toBe(
+      'input[type="password"], [data-track-mask], [autocomplete^="cc-"], [autocomplete="one-time-code"], .secret'
+    )
     expect(opts.recordCanvas).toBe(false)
+  })
+
+  it('maskAllInputs=true 时所有输入值录成 ***，始终不录的字段不变', () => {
+    const opts = setup({}, { maskAllInputs: true }).stub.calls[0]
+    expect(opts.maskAllInputs).toBe(true)
+    expect(opts.maskInputOptions).toEqual({ password: true })
+    expect(opts.blockSelector).toContain('input[type="password"]')
+    expect(opts.blockSelector).toContain('[autocomplete^="cc-"]')
+    expect(opts.blockSelector).toContain('[autocomplete="one-time-code"]')
+  })
+
+  it('始终不录的选择器能命中 password / data-track-mask / cc-* / one-time-code 字段，普通字段不命中', () => {
+    const sel = setup().stub.calls[0].blockSelector
+    const make = (html: string) => {
+      const d = document.createElement('div')
+      d.innerHTML = html
+      return d.firstElementChild as Element
+    }
+    expect(make('<input type="password">').matches(sel)).toBe(true)
+    expect(make('<div data-track-mask></div>').matches(sel)).toBe(true)
+    expect(make('<input autocomplete="cc-number">').matches(sel)).toBe(true)
+    expect(make('<input autocomplete="cc-csc">').matches(sel)).toBe(true)
+    expect(make('<input autocomplete="one-time-code">').matches(sel)).toBe(true)
+    expect(make('<input autocomplete="email">').matches(sel)).toBe(false)
+    expect(make('<input type="text">').matches(sel)).toBe(false)
   })
 
   it('record 默认每 3 分钟全量快照（rrweb checkoutEveryNms），可自定义或关闭', () => {
@@ -556,6 +585,29 @@ describe('replay 插件', () => {
     const { stub } = setup({}, { maskTextSelector: false })
     expect(stub.calls).toHaveLength(1)
     expect('maskTextSelector' in stub.calls[0]).toBe(false)
+  })
+
+  it('selfCheck：回放未设置 maskTextSelector / maskAllInputs 时 replay 项 warn（不 fail），都设置后 ok', async () => {
+    const plain = setup().t
+    const r1 = (await plain.client.selfCheck()).items.find((i) => i.id === 'replay')
+    expect(r1?.status).toBe('warn')
+    expect(r1?.message).toContain('maskTextSelector')
+    expect(r1?.message).toContain('maskAllInputs')
+    destroyAllClients()
+    const textOnly = setup({}, { maskTextSelector: '*' }).t
+    const r2 = (await textOnly.client.selfCheck()).items.find((i) => i.id === 'replay')
+    expect(r2?.status).toBe('warn')
+    expect(r2?.message).not.toContain('maskTextSelector')
+    expect(r2?.message).toContain('maskAllInputs')
+    destroyAllClients()
+    const both = setup({}, { maskTextSelector: '*', maskAllInputs: true }).t
+    const r3 = (await both.client.selfCheck()).items.find((i) => i.id === 'replay')
+    expect(r3?.status).toBe('ok')
+  })
+
+  it('record 可开启全页文本遮罩（maskTextSelector=*）', () => {
+    const { stub } = setup({}, { maskTextSelector: '*' })
+    expect(stub.calls[0].maskTextSelector).toBe('*')
   })
 
   it('record 可自定义 maskTextSelector', () => {

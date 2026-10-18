@@ -58,6 +58,18 @@ describe('selfCheck', () => {
     expect(item(await none.client.selfCheck(), 'ping')?.status).toBe('warn')
   })
 
+  it('privacy：开启响应体采集但未显式开脱敏（默认）也提示，只 warn 不 fail', async () => {
+    const t = createTestClient({ apiBodyEnabled: true }, { ping: okPing })
+    const p = item(await t.client.selfCheck(), 'privacy')
+    expect(p?.status).toBe('warn')
+    expect(p?.message).toBe('响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）')
+    const on = createTestClient(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: true },
+      { ping: okPing }
+    )
+    expect(item(await on.client.selfCheck(), 'privacy')?.status).toBe('ok')
+  })
+
   it('冲突配置、采样 0、DNT、optOut、回放未加载、隐私降级', async () => {
     const t = createTestClient(
       {
@@ -93,7 +105,10 @@ describe('selfCheck', () => {
 
   it('filters 项报告 beforeSend / ignoreErrors / skipHandledErrors', async () => {
     const a = createTestClient({}, { ping: okPing })
-    expect(item(await a.client.selfCheck(), 'filters')?.message).toBe('跳过 HttpError/已处理错误')
+    // skipHandledErrors 默认 false：上报全部错误
+    expect(item(await a.client.selfCheck(), 'filters')?.message).toBe('上报全部错误')
+    const c = createTestClient({ skipHandledErrors: true }, { ping: okPing })
+    expect(item(await c.client.selfCheck(), 'filters')?.message).toBe('跳过 HttpError/已处理错误')
     const b = createTestClient(
       { beforeSend: (e) => e, ignoreErrors: ['x', /y/], skipHandledErrors: false },
       { ping: okPing }
@@ -178,7 +193,7 @@ describe('beforeSend', () => {
 
 describe('ignoreErrors / skipHandledErrors', () => {
   const base = { skipHandledErrors: true, ignoreErrors: undefined }
-  it('默认跳过 HttpError / handled / expected', () => {
+  it('skipHandledErrors=true 时跳过 HttpError / handled / expected', () => {
     expect(isIgnoredError(base, Object.assign(new Error('a'), { name: 'HttpError' }), 'a')).toBe(
       true
     )
@@ -209,8 +224,27 @@ describe('ignoreErrors / skipHandledErrors', () => {
       )
     ).toBe(false)
   })
+  it('默认（skipHandledErrors=false）：HttpError / expected 也上报', async () => {
+    const t = createTestClient({ plugins: [errorPlugin()] })
+    expect(t.client.options.skipHandledErrors).toBe(false)
+    const e = new window.Event('unhandledrejection') as Event & { reason: unknown }
+    e.reason = Object.assign(new Error('401'), { name: 'HttpError' })
+    window.dispatchEvent(e)
+    const e2 = new window.Event('unhandledrejection') as Event & { reason: unknown }
+    e2.reason = Object.assign(new Error('biz'), { expected: true })
+    window.dispatchEvent(e2)
+    await t.client.flush()
+    const msgs = allEvents(t.sent)
+      .filter((x) => x.event === '$error')
+      .map((x) => x.props.message)
+    expect(msgs).toEqual(['401', 'biz'])
+  })
   it('error 插件：unhandledrejection 与 window error 均过滤', async () => {
-    const t = createTestClient({ plugins: [errorPlugin()], ignoreErrors: ['noise'] })
+    const t = createTestClient({
+      plugins: [errorPlugin()],
+      ignoreErrors: ['noise'],
+      skipHandledErrors: true
+    })
     const rej = (reason: unknown) => {
       const e = new window.Event('unhandledrejection') as Event & { reason: unknown }
       e.reason = reason

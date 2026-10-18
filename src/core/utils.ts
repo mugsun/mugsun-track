@@ -128,22 +128,30 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
   return out
 }
 
-/** 上报 URL 敏感 query 键（小写归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
-const SENSITIVE_QUERY_KEYS = new Set([
-  'token',
-  'access_token',
-  'authorization',
-  'id_token',
-  'refresh_token',
-  'api_key',
-  'apikey',
-  'auth',
-  'secret',
-  'password'
-])
+/**
+ * 敏感键名归一：去掉 - 和 _ 再小写，accessToken / access-token / ACCESS_TOKEN 都归为 accesstoken。
+ * URL 查询键与响应体键共用这一口径；归一后精确匹配，不做子串匹配（tokenCount、sessionTimeout 不算）。
+ */
+export const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
+
+/** 上报 URL 敏感 query 键（normalizeKey 归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
+const SENSITIVE_QUERY_KEYS = new Set(
+  [
+    'token',
+    'access_token',
+    'authorization',
+    'id_token',
+    'refresh_token',
+    'api_key',
+    'apikey',
+    'auth',
+    'secret',
+    'password'
+  ].map(normalizeKey)
+)
 
 /**
- * 剥离 URL 查询串中的敏感键值（大小写不敏感）。
+ * 剥离 URL 查询串中的敏感键值（normalizeKey 归一，忽略大小写与 -、_）。
  * 非法 URL 原样返回；无查询串不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
  */
 /** endpoint 归一：去首尾空白与末尾所有斜杠，避免拼出 //track/collect、//track/config */
@@ -157,7 +165,7 @@ export function redactSensitiveUrl(url: string): string {
     let changed = false
     const keys = Array.from(new Set(u.searchParams.keys()))
     for (const key of keys) {
-      if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+      if (SENSITIVE_QUERY_KEYS.has(normalizeKey(key))) {
         u.searchParams.set(key, '***')
         changed = true
       }

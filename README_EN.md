@@ -71,7 +71,7 @@ Transport order: `sendBeacon` → `fetch` keepalive → `XHR`. The queue default
 
 `appKey` is visible in the browser and is not a secret. The server must enforce existence checks, rate limits, queue backpressure, and event validation.
 
-Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; do not read `input` / `textarea` values; mask `password` trees and `maskSelectors` matches. Replay masks inputs and page text by default (`maskTextSelector: '*'`, can be disabled); `apiBodyMaskEnabled` defaults to on. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
+Privacy defaults: honor DNT; provide `optOut()` / `optIn()`; autocaptured click / change events carry no `input` / `textarea` values (input values in replays follow `maskAllInputs`, see below); mask `password` trees and `maskSelectors` matches. Replay shows page text and input values as-is by default (pass `maskTextSelector: '*'` or a narrower selector, and `maskAllInputs: true`, to mask them); password fields, `data-track-mask` areas, card fields (`autocomplete=cc-*`) and one-time-code fields are never recorded; `apiBodyMaskEnabled` defaults to off: credential keys in response bodies (`token`, `access_token`, `refresh_token`, `password`, `secret`, `cookie`, …) are always replaced with `***`, while personal data such as phone, email and ID numbers is uploaded as-is unless you set it to `true`. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
 
 Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 6.3 KB gzip.
 
@@ -85,7 +85,7 @@ const tracker = createTracker({
   beforeSend: (e) => (e.event === 'debug_only' ? null : e),
   // Strings match a message substring, RegExps test the message, or a predicate (error, message) => boolean
   ignoreErrors: ['ResizeObserver loop', /^AbortError/],
-  // Default true: skip name==='HttpError' and errors flagged handled/expected
+  // Default false (report everything); set true to skip name==='HttpError' and errors flagged handled/expected
   skipHandledErrors: true
 })
 
@@ -96,10 +96,10 @@ console.table(report.items) // each { id, status: 'ok'|'warn'|'fail', message, f
 ```
 
 - `beforeSend` merges only the returned object's `props` (`event_id`, `distinct_id` etc. can't be changed); non-object return values mean "unchanged". If the hook throws, the event is **dropped by default** so a broken masking hook can't leak unmasked data; set `beforeSendOnError: 'keep'` to send the original event instead.
-- **Not covered by `beforeSend`**: session events (`$session_start` / `$session_end`), **session replay** chunks and **API response body** uploads. Use `maskTextSelector` / `maskSelectors` for replay and `apiBodyMaskEnabled` (on by default) for bodies.
+- **Not covered by `beforeSend`**: session events (`$session_start` / `$session_end`), **session replay** chunks and **API response body** uploads. Use `maskTextSelector` / `maskSelectors` for replay and `apiBodyMaskEnabled` (off by default) for bodies.
 - `selfCheck()` makes one real `GET /track/config?app_key=` request (no cookies), sends no user data and enqueues nothing. Messages are in Chinese.
 - `trackApiError` emits an `api_request` event (`success=false`, `source=manual`, with `biz_code`), same shape as `api-monitor`; sensitive query values in `url` (`token`, `access_token`, …) are replaced with `***`.
-- **Behavior change**: `skipHandledErrors` defaults to `true`, so after upgrading `HttpError` and handled/expected errors are no longer reported as `$error`; set it to `false` for the old behavior.
+- `skipHandledErrors` defaults to `false`: `HttpError` and handled/expected errors are reported as `$error` by default; set it to `true` to skip them.
 - `ignoreErrors` / `skipHandledErrors` apply to the `error` plugin (window error, unhandledrejection) and the Vue `errorHandler`.
 - The collect URL carries `?app_key=` so the server can attribute rejected requests (unparseable or oversized bodies) to the app; see "Integration health" in the admin UI.
 - The self-check implementation is injected by `createTracker` and is not part of the core entry; core-only users inject `deps.selfCheck = runSelfCheck`.
