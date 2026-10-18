@@ -1,3 +1,5 @@
+import { normalizeKey } from '../../core/utils'
+
 /** POST {endpoint}/track/api-body 单条协议体（G102，与后端约定） */
 export interface ApiBodyPayload {
   app_key: string
@@ -48,9 +50,6 @@ function base64FromBytes(bytes: Uint8Array): string {
 function base64FromString(s: string): string {
   return base64FromBytes(new TextEncoder().encode(s))
 }
-
-/** 键名归一：去掉 - 和 _ 再小写，accessToken / access-token / ACCESS_TOKEN 都归为 accesstoken */
-const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
 
 /**
  * 凭证类键（按 normalizeKey 归一后精确匹配）：**始终**整值替换 ***，不受 apiBodyMaskEnabled 控制。
@@ -119,6 +118,11 @@ export function maskJsonBody(raw: string, personal: boolean): string | null {
   } catch {
     return null
   }
+  return maskParsedBody(parsed, personal)
+}
+
+/** 已解析的 JSON 值脱敏后序列化（插件侧已解析过，避免二次 JSON.parse） */
+export function maskParsedBody(parsed: unknown, personal: boolean): string | null {
   return JSON.stringify(maskValue(parsed, 0, personal)) ?? null
 }
 
@@ -159,11 +163,14 @@ export class ApiBodyUploader {
     }
   }
 
-  /** 读体完成后的入口：脱敏 → gzip + base64 编码（串行入链）→ 待发队列 → 发送泵 */
-  push(raw: string, eventId: string): void {
+  /**
+   * 读体完成后的入口：脱敏 → gzip + base64 编码（串行入链）→ 待发队列 → 发送泵。
+   * parsed 为插件侧已解析的 JSON 值（JSON.parse 不会返回 undefined）；不传则这里解析 raw。
+   */
+  push(raw: string, eventId: string, parsed?: unknown): void {
     if (this.stopped) return
     this.encodeChain = this.encodeChain
-      .then(() => this.encodeBody(raw, eventId))
+      .then(() => this.encodeBody(raw, eventId, parsed))
       .then((payload) => {
         if (this.stopped || payload === null) return
         this.outbox.push({ payload, attempts: 0 })
@@ -185,10 +192,17 @@ export class ApiBodyUploader {
     this.opts.log?.(...args)
   }
 
-  private async encodeBody(raw: string, eventId: string): Promise<ApiBodyPayload | null> {
+  private async encodeBody(
+    raw: string,
+    eventId: string,
+    parsed?: unknown
+  ): Promise<ApiBodyPayload | null> {
     // 凭证类键始终脱敏；个人信息类键由 maskEnabled（apiBodyMaskEnabled）控制。
     // 解析失败不上传（插件侧已标 body_skipped=unparsable，这里是兜底）
-    const body = maskJsonBody(raw, this.opts.maskEnabled)
+    const body =
+      parsed === undefined
+        ? maskJsonBody(raw, this.opts.maskEnabled)
+        : maskParsedBody(parsed, this.opts.maskEnabled)
     if (body === null) {
       this.log(`api-body event_id=${eventId} 不是合法 JSON，丢弃`)
       return null

@@ -23,7 +23,7 @@
 - **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
 - **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）」；回放已加载但没有设 `maskTextSelector` 或 `maskAllInputs: true` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
 - **尊重 Global Privacy Control**：新增 `respectGpc` 选项，默认 `true`，与 `respectDnt` 一致。浏览器 `navigator.globalPrivacyControl === true` 时 SDK 停用，`selfCheck()` 的 consent 项提示。只影响开启 GPC 的用户；调试可设 `respectGpc: false`。
-- **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），值替换为 `***`。键名匹配改为忽略大小写与 `_`、`-`（`accessToken`、`Access-Token` 也算）。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
+- **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
 - **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
@@ -37,6 +37,10 @@
 - 回放收尾块丢失：pagehide 时原来把剩余缓冲（最多 10MB）合成一个明文块用 beacon 发出，超过 sendBeacon 的 64KB 限额或服务端单块上限（明文约 1.07MB）就整块丢失。现在：① 页面转后台（`visibilitychange → hidden`）时先把缓冲走 gzip 管道，以 beacon / fetch keepalive 发出，移动端切后台也能覆盖；② pagehide 剩余部分按 32KB 明文拆块；sendBeacon 与 fetch keepalive 共用每个文档约 64KB 的在途额度，pagehide 时普通事件的收尾 beacon 和仍在途的回放块也占这份额度，所以回放收尾块合计请求体不超过 44KB，第一块放不下即停止，丢弃更晚的事件并记日志（放不下的块先按字节估算，不做 base64 编码）；转后台块的 gzip 还没完成页面就卸载时，改为同步明文发出（沿用原 seq），压缩结果作废，不会重复发送；③ 普通切块也按 1MB 明文拆分，避免触发服务端的 413
 
 - 错误堆栈：`sanitizeProps` 对顶层 `stack` 放宽到 4096 字符，与 error 插件的截断和服务端（mugsun-boot `PROPS_STACK_MAX_LEN`）一致。之前所有字符串一律截到 1024，`$error` 的堆栈实际只剩 1024 字符；其它字符串属性仍是 1024
+
+- URL 敏感参数与响应体凭证键改用同一个键名归一（去掉 `-`、`_` 后小写，再精确匹配）。此前 URL 只做小写，`?accessToken=`、`?Refresh-Token=` 不会被识别；`tokenCount`、`passwordHint`、`sessionTimeout` 这类键依旧保留原值。
+
+- 响应体只 `JSON.parse` 一次：插件判定可解析后把解析结果直接交给上传器脱敏，不再解析两遍。
 
 - endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`
 

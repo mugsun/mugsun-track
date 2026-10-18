@@ -7,6 +7,7 @@ import {
   type ApiBodyPayload,
   type ApiBodySendOutcome
 } from '../src/plugins/api-monitor/uploader'
+import { normalizeKey, redactSensitiveUrl } from '../src/core/utils'
 import type { TrackOptions } from '../src/types'
 import { allEvents, createTestClient, destroyAllClients, type TestClient } from './helpers'
 
@@ -256,6 +257,22 @@ describe('api-monitor URL 敏感 query 脱敏', () => {
     await t.client.flush()
     const ev = allEvents(t.sent).find((e) => e.event === 'api_request')
     expect(ev?.props.url).toBe('https://api.example.com/orders?api_key=***&source=app')
+  })
+
+  it('URL 键与响应体键同一归一口径：accessToken、Refresh-Token 也替换', () => {
+    expect(
+      redactSensitiveUrl(
+        'https://api.example.com/cb?accessToken=a1&Refresh-Token=r1&ID_TOKEN=i1&page=2'
+      )
+    ).toBe('https://api.example.com/cb?accessToken=***&Refresh-Token=***&ID_TOKEN=***&page=2')
+    expect(normalizeKey('Refresh-Token')).toBe(normalizeKey('refresh_token'))
+  })
+
+  it('归一后精确匹配，不做子串匹配：tokenCount / passwordHint / sessionTimeout 原样保留', () => {
+    const url = 'https://api.example.com/x?tokenCount=3&passwordHint=pet&sessionTimeout=30&token=t'
+    expect(redactSensitiveUrl(url)).toBe(
+      'https://api.example.com/x?tokenCount=3&passwordHint=pet&sessionTimeout=30&token=***'
+    )
   })
 
   it('无敏感键时 URL 原样保留', async () => {
@@ -620,6 +637,36 @@ describe('凭证键归一、非法 JSON、超深嵌套（安全复核 R2）', ()
     const d = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
     for (const k of Object.keys(body).filter((k) => k !== 'userName')) expect(d[k]).toBe('***')
     expect(d.userName).toBe('kept')
+    t.client.destroy()
+  })
+
+  it('归一后精确匹配：tokenCount / passwordHint / sessionTimeout 保留原值（session 在清单里也不影响）', () => {
+    const out = JSON.parse(
+      maskSensitiveBody(
+        JSON.stringify({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: 's' }),
+        false
+      )
+    ) as Record<string, unknown>
+    expect(out).toEqual({ tokenCount: 3, passwordHint: 'pet', sessionTimeout: 30, session: '***' })
+  })
+
+  it('响应体整条链路只 JSON.parse 一次', async () => {
+    const cap = captureBodySend()
+    const text = JSON.stringify({ marker: 'parse-once-7f3a', token: 't' })
+    window.fetch = (async () => jsonResponse(text)) as typeof fetch
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    const spy = vi.spyOn(JSON, 'parse')
+    try {
+      await window.fetch('https://api.example.com/user/info')
+      await settle()
+      expect(spy.mock.calls.filter((c) => c[0] === text)).toHaveLength(1)
+    } finally {
+      spy.mockRestore()
+    }
+    expect(JSON.parse(decodeBody(cap.calls[0].payload))).toEqual({
+      marker: 'parse-once-7f3a',
+      token: '***'
+    })
     t.client.destroy()
   })
 

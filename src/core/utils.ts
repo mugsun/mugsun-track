@@ -128,10 +128,13 @@ export function sanitizeProps(props: Record<string, unknown>): Record<string, un
   return out
 }
 
-/** 键名归一：去掉 - 和 _ 再小写（与 api-body 凭证键同一规则） */
-const normalizeParamKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
+/**
+ * 敏感键名归一：去掉 - 和 _ 再小写，accessToken / access-token / ACCESS_TOKEN 都归为 accesstoken。
+ * URL 查询键与响应体键共用这一口径；归一后精确匹配，不做子串匹配（tokenCount、sessionTimeout 不算）。
+ */
+export const normalizeKey = (k: string): string => k.replace(/[-_]/g, '').toLowerCase()
 
-/** 上报 URL 敏感 query / hash 参数键（按 normalizeParamKey 归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
+/** 上报 URL 敏感 query / hash 参数键（normalizeKey 归一后精确匹配）：命中则值替换为 ***，业务参数保留 */
 const SENSITIVE_QUERY_KEYS = new Set(
   [
     'token',
@@ -151,7 +154,7 @@ const SENSITIVE_QUERY_KEYS = new Set(
     'ticket',
     'session',
     'otp'
-  ].map(normalizeParamKey)
+  ].map(normalizeKey)
 )
 
 /** 对 `k=v&k2=v2` 形式的参数串做敏感键替换；返回 null 表示未命中 */
@@ -159,7 +162,7 @@ function redactParamString(qs: string): string | null {
   const params = new URLSearchParams(qs)
   let changed = false
   for (const key of Array.from(new Set(params.keys()))) {
-    if (SENSITIVE_QUERY_KEYS.has(normalizeParamKey(key))) {
+    if (SENSITIVE_QUERY_KEYS.has(normalizeKey(key))) {
       params.set(key, '***')
       changed = true
     }
@@ -184,7 +187,7 @@ function redactHash(hash: string): string | null {
 }
 
 /**
- * 剥离 URL 查询串与 hash 参数中的敏感键值（大小写不敏感）。
+ * 剥离 URL 查询串与 hash 参数中的敏感键值（normalizeKey 归一，忽略大小写与 -、_）。
  * 非法 URL 原样返回；无参数不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
  */
 /** endpoint 归一：去首尾空白与末尾所有斜杠，避免拼出 //track/collect、//track/config */
@@ -198,7 +201,7 @@ export function redactSensitiveUrl(url: string): string {
     let changed = false
     const keys = Array.from(new Set(u.searchParams.keys()))
     for (const key of keys) {
-      if (SENSITIVE_QUERY_KEYS.has(normalizeParamKey(key))) {
+      if (SENSITIVE_QUERY_KEYS.has(normalizeKey(key))) {
         u.searchParams.set(key, '***')
         changed = true
       }
