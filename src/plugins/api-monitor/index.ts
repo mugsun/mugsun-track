@@ -63,13 +63,15 @@ interface UrlInfo {
 /** body 过滤链裁定：collect 读体上传；size/credential 跳过并标记；skip 静默跳过（非 JSON/SSE/二进制） */
 type BodyAction = 'collect' | 'size' | 'credential' | 'skip'
 
-/** 声明为 JSON 的响应体能否解析：不能则不上传 body，标 body_skipped=unparsable */
-const isParsableJson = (text: string): boolean => {
+/**
+ * 解析声明为 JSON 的响应体：失败返回 undefined（不上传 body，标 body_skipped=unparsable）。
+ * 解析结果交给 uploader 直接脱敏，整条链路只 JSON.parse 一次。
+ */
+const parseJson = (text: string): unknown => {
   try {
-    JSON.parse(text)
-    return true
+    return JSON.parse(text) as unknown
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -176,7 +178,8 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           report({ ...base, response_size: size, body_skipped: 'size' })
           return
         }
-        if (!isParsableJson(text)) {
+        const parsed = parseJson(text)
+        if (parsed === undefined) {
           report({ ...base, response_size: size, body_skipped: 'unparsable' })
           return
         }
@@ -191,7 +194,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
           },
           { eventId }
         )
-        if (tracked) uploader?.push(text, tracked)
+        if (tracked) uploader?.push(text, tracked, parsed)
       }
 
       const teardowns: Array<() => void> = []

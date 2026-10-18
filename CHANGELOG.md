@@ -32,6 +32,10 @@
 
 - 错误堆栈：`sanitizeProps` 对顶层 `stack` 放宽到 4096 字符，与 error 插件的截断和服务端（mugsun-boot `PROPS_STACK_MAX_LEN`）一致。之前所有字符串一律截到 1024，`$error` 的堆栈实际只剩 1024 字符；其它字符串属性仍是 1024
 
+- URL 敏感参数与响应体凭证键改用同一个键名归一（去掉 `-`、`_` 后小写，再精确匹配）。此前 URL 只做小写，`?accessToken=`、`?Refresh-Token=` 不会被识别；`tokenCount`、`passwordHint`、`sessionTimeout` 这类键依旧保留原值。
+
+- 响应体只 `JSON.parse` 一次：插件判定可解析后把解析结果直接交给上传器脱敏，不再解析两遍。
+
 - endpoint 末尾斜杠/空白统一归一，collect、config 与自检 ping 不再出现 `//track/...`
 
 ### 新增
