@@ -71,7 +71,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 
 `appKey` 在浏览器端可见，不具备机密性。服务端须通过存在性校验、限流、队列背压与事件校验实施防护。
 
-隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入值，页面文本默认显示原文（需要遮罩时传 `maskTextSelector: '*'` 或更窄的选择器）；`apiBodyMaskEnabled` 默认关闭（响应体原文上传，需要脱敏时设 `true`）。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
+隐私默认项：尊重 DNT；提供 `optOut()` / `optIn()`；不采集 `input` / `textarea` 的 `value`；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认遮罩输入值，页面文本默认显示原文（需要遮罩时传 `maskTextSelector: '*'` 或更窄的选择器）；`apiBodyMaskEnabled` 默认关闭：响应体里的凭证类键（`token`、`access_token`、`refresh_token`、`password`、`secret`、`cookie` 等）始终替换为 `***`，手机号、邮箱、身份证号等个人信息默认原文上传，需要脱敏时设 `true`。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
 
 构建门禁：`dist/core.js` gzip 体积不超过 8 KB；当前发布说明中的 core 体积约为 6.3 KB gzip。
 

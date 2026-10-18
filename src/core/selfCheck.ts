@@ -190,7 +190,9 @@ export async function runSelfCheck(
 
   // ---- privacy
   const priv: string[] = []
-  if (o.apiBodyEnabled && o.apiBodyMaskEnabled === false) priv.push('响应体采集已开启但关闭了脱敏')
+  // 默认（未设置）也提示：个人信息字段默认原文上传；只是提示（warn），不会 fail
+  if (o.apiBodyEnabled && o.apiBodyMaskEnabled !== true)
+    priv.push('响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）')
   if (!o.respectDnt) priv.push('respectDnt=false')
   add(
     'privacy',

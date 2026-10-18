@@ -153,7 +153,7 @@ export interface TrackOptions {
   apiMonitorEnabled?: boolean
   /** 响应体采集开关，默认关；优先级同上。仅在 apiMonitorEnabled 开启后生效 */
   apiBodyEnabled?: boolean
-  /** 响应体业务字段脱敏开关（内置敏感键清单 → ***），默认关（原文上传）；优先级同上。需要脱敏时显式设 true */
+  /** 响应体个人信息字段脱敏开关（phone/mobile/email/idcard/bankcard → ***），默认关；优先级同上。凭证类键（token、password、cookie 等）不论开关始终脱敏 */
   apiBodyMaskEnabled?: boolean
   /** 响应体安全阀（字节），默认 1MB；优先级同上。超限不采并标 body_skipped=size */
   apiBodyMaxBytes?: number

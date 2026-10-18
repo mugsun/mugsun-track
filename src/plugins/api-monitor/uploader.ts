@@ -18,7 +18,7 @@ export interface ApiBodyUploaderOptions {
   send: (payload: ApiBodyPayload) => Promise<ApiBodySendOutcome>
   /** CompressionStream 包装；缺省或失败降级明文（gzip:false 标记） */
   gzip?: (body: string) => Promise<ArrayBuffer>
-  /** 业务字段脱敏（apiBodyMaskEnabled）：上传前对 JSON body 递归脱敏，默认 false（原文上传） */
+  /** 个人信息字段脱敏（apiBodyMaskEnabled）：默认 false；凭证类键不论此开关始终脱敏 */
   maskEnabled?: boolean
   /** 单条失败重试次数（指数退避后丢弃），默认 3 */
   maxRetries?: number
@@ -50,47 +50,58 @@ function base64FromString(s: string): string {
 }
 
 /**
- * 内置业务敏感键清单（小写归一后精确匹配）：命中即整值替换 ***。
- * 仅业务字段脱敏（apiBodyMaskEnabled 控制，默认关）；
+ * 凭证类键（小写归一后精确匹配）：**始终**整值替换 ***，不受 apiBodyMaskEnabled 控制，
+ * 与 URL 敏感参数（core/utils.ts redactSensitiveUrl）口径一致，另加 pwd、cookie。
  * 凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
  */
-const SENSITIVE_KEYS = new Set([
+const CREDENTIAL_KEYS = new Set([
+  'token',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'authorization',
+  'api_key',
+  'apikey',
+  'auth',
+  'secret',
   'password',
   'pwd',
-  'token',
-  'secret',
-  'authorization',
-  'cookie',
-  'idcard',
-  'bankcard',
-  'phone',
-  'mobile',
-  'email'
+  'cookie'
 ])
+
+/** 个人信息类键：仅 apiBodyMaskEnabled 为 true 时替换 ***（默认关，原文上传） */
+const PERSONAL_KEYS = new Set(['idcard', 'bankcard', 'phone', 'mobile', 'email'])
 
 /** 递归深度上限：防环/防病态嵌套打爆栈 */
 const MASK_DEPTH_LIMIT = 8
 
-function maskValue(value: unknown, depth: number): unknown {
+function maskValue(value: unknown, depth: number, personal: boolean): unknown {
   if (value === null || typeof value !== 'object') return value
   if (depth >= MASK_DEPTH_LIMIT) return value
-  if (Array.isArray(value)) return value.map((v) => maskValue(v, depth + 1))
+  if (Array.isArray(value)) return value.map((v) => maskValue(v, depth + 1, personal))
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? '***' : maskValue(v, depth + 1)
+    const key = k.toLowerCase()
+    out[k] =
+      CREDENTIAL_KEYS.has(key) || (personal && PERSONAL_KEYS.has(key))
+        ? '***'
+        : maskValue(v, depth + 1, personal)
   }
   return out
 }
 
-/** JSON body 递归脱敏：非合法 JSON 原样返回（诚实口径，不猜结构） */
-export function maskSensitiveBody(raw: string): string {
+/**
+ * JSON body 递归脱敏：凭证类键始终替换；personal 为 true（默认，保持导出函数原有口径）时
+ * 个人信息类键也替换。非合法 JSON 原样返回（诚实口径，不猜结构）
+ */
+export function maskSensitiveBody(raw: string, personal = true): string {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
     return raw
   }
-  return JSON.stringify(maskValue(parsed, 0)) ?? raw
+  return JSON.stringify(maskValue(parsed, 0, personal)) ?? raw
 }
 
 /**
@@ -149,7 +160,8 @@ export class ApiBodyUploader {
   }
 
   private async encodeBody(raw: string, eventId: string): Promise<ApiBodyPayload> {
-    const body = this.opts.maskEnabled ? maskSensitiveBody(raw) : raw
+    // 凭证类键始终脱敏；个人信息类键由 maskEnabled（apiBodyMaskEnabled）控制
+    const body = maskSensitiveBody(raw, this.opts.maskEnabled)
     let gzip = false
     let encoded: string
     if (this.opts.gzip) {

@@ -58,6 +58,18 @@ describe('selfCheck', () => {
     expect(item(await none.client.selfCheck(), 'ping')?.status).toBe('warn')
   })
 
+  it('privacy：开启响应体采集但未显式开脱敏（默认）也提示，只 warn 不 fail', async () => {
+    const t = createTestClient({ apiBodyEnabled: true }, { ping: okPing })
+    const p = item(await t.client.selfCheck(), 'privacy')
+    expect(p?.status).toBe('warn')
+    expect(p?.message).toContain('个人信息字段未脱敏')
+    const on = createTestClient(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: true },
+      { ping: okPing }
+    )
+    expect(item(await on.client.selfCheck(), 'privacy')?.status).toBe('ok')
+  })
+
   it('冲突配置、采样 0、DNT、optOut、回放未加载、隐私降级', async () => {
     const t = createTestClient(
       {

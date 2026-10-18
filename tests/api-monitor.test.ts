@@ -542,12 +542,15 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
   it('默认关闭：不传 apiBodyMaskEnabled 时原文上传', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
-    // 不显式传 apiBodyMaskEnabled：插件兜底默认 false
+    // 不显式传 apiBodyMaskEnabled：插件兜底默认 false，个人信息键原文，凭证键仍 ***
     const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
     await window.fetch('https://api.example.com/me')
     await settle()
     expect(cap.calls).toHaveLength(1)
-    expect(decodeBody(cap.calls[0].payload)).toBe(BODY)
+    const decoded = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    expect(decoded.password).toBe('***')
+    expect(decoded.user).toEqual({ phone: '13800000000', name: '张三', Token: '***' })
+    expect(decoded.list).toEqual([{ email: 'a@b.c', id: 1 }, 'x'])
     t.client.destroy()
   })
 
@@ -569,7 +572,7 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
     t.client.destroy()
   })
 
-  it('显式关闭：原文上传不脱敏', async () => {
+  it('显式关闭：个人信息键原文上传，凭证键仍替换 ***', async () => {
     const cap = captureBodySend()
     window.fetch = (async () => jsonResponse(BODY)) as typeof fetch
     const t = setup(
@@ -578,7 +581,77 @@ describe('api-body 脱敏（apiBodyMaskEnabled，默认关）', () => {
     )
     await window.fetch('https://api.example.com/me')
     await settle()
-    expect(decodeBody(cap.calls[0].payload)).toBe(BODY)
+    const decoded = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    expect(decoded.password).toBe('***')
+    expect(decoded.user).toEqual({ phone: '13800000000', name: '张三', Token: '***' })
+    t.client.destroy()
+  })
+})
+
+// ---------------------------------------------------------------- 默认配置下仍生效的保护（回归）
+
+describe('默认配置下仍生效的保护（回归）', () => {
+  it('默认配置：登录/凭证端点的响应体不上传', async () => {
+    const cap = captureBodySend()
+    window.fetch = (async () =>
+      jsonResponse('{"access_token":"jwt-abc","refresh_token":"jwt-def"}')) as typeof fetch
+    // 只开响应体采集，其余（含 apiBodyMaskEnabled）全部走默认
+    const t = setup({ apiBodyEnabled: true }, { send: cap.send, gzip: fakeGzip })
+    expect(t.client.options.apiBodyMaskEnabled).toBeUndefined()
+    await window.fetch('https://api.example.com/auth/login', { method: 'POST' })
+    await window.fetch('https://api.example.com/oauth/token', { method: 'POST' })
+    await settle()
+    await t.client.flush()
+    expect(cap.calls).toHaveLength(0)
+    const evs = allEvents(t.sent).filter((e) => e.event === 'api_request')
+    expect(evs.map((e) => e.props.body_skipped)).toEqual(['credential', 'credential'])
+    t.client.destroy()
+  })
+
+  it('默认配置：URL 里的 refresh_token 查询参数替换为 ***', async () => {
+    window.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
+    const t = setup()
+    await window.fetch('https://api.example.com/session?refresh_token=r-secret-1&page=1')
+    await t.client.flush()
+    const url = String(allEvents(t.sent).find((e) => e.event === 'api_request')?.props.url)
+    expect(url).toMatch(/refresh_token=\*\*\*/)
+    expect(url).toContain('page=1')
+    expect(url).not.toContain('r-secret-1')
+    t.client.destroy()
+  })
+
+  it('apiBodyMaskEnabled=false 时，非凭证端点响应体里的凭证键也始终 ***', async () => {
+    const cap = captureBodySend()
+    const body = {
+      access_token: 'a',
+      refresh_token: 'r',
+      id_token: 'i',
+      token: 't',
+      password: 'p',
+      pwd: 'p2',
+      secret: 's',
+      authorization: 'Bearer x',
+      cookie: 'sid=1',
+      api_key: 'k',
+      apikey: 'k2',
+      auth: { user: 'u' },
+      nested: [{ Refresh_Token: 'r2', phone: '13800000000' }],
+      ok: 1
+    }
+    window.fetch = (async () => jsonResponse(JSON.stringify(body))) as typeof fetch
+    const t = setup(
+      { apiBodyEnabled: true, apiBodyMaskEnabled: false },
+      { send: cap.send, gzip: fakeGzip }
+    )
+    await window.fetch('https://api.example.com/user/info')
+    await settle()
+    expect(cap.calls).toHaveLength(1)
+    const d = JSON.parse(decodeBody(cap.calls[0].payload)) as Record<string, unknown>
+    for (const k of Object.keys(body).filter((k) => k !== 'nested' && k !== 'ok')) {
+      expect(d[k]).toBe('***')
+    }
+    expect(d.nested).toEqual([{ Refresh_Token: '***', phone: '13800000000' }])
+    expect(d.ok).toBe(1)
     t.client.destroy()
   })
 })
