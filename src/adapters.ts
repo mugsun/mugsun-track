@@ -2,6 +2,7 @@ import type { KeyValueStore, Props, QueueStore, RemoteConfig, TrackEvent } from 
 import type { ConfigFetcher } from './core/config'
 import type { TransportDeps } from './core/transport'
 import { MemoryKeyValueStore } from './core/storage'
+import { redactSensitiveUrl } from './core/utils'
 
 /**
  * 浏览器环境适配器：core 纯逻辑所需能力的真实实现集中在这里，
@@ -187,7 +188,8 @@ export function browserContextProvider(release?: string): () => Props {
   } catch {
     // search 解析失败则无 UTM
   }
-  const referrer = document.referrer || ''
+  // referrer 是完整 URL（可能带 token / code 等），按 URL 敏感参数口径脱敏
+  const referrer = redactSensitiveUrl(document.referrer || '')
   const language = navigator.language
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   return () => ({
@@ -203,6 +205,12 @@ export function browserContextProvider(release?: string): () => Props {
       ?.effectiveType,
     release
   })
+}
+
+/** Global Privacy Control：navigator.globalPrivacyControl === true 视为拒绝追踪 */
+export function browserIsGpc(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true
 }
 
 export function browserIsDnt(): boolean {

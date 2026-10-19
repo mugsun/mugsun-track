@@ -143,6 +143,8 @@ export interface TrackOptions {
   retryMaxDelay?: number
   /** 尊重 Do Not Track，默认 true */
   respectDnt?: boolean
+  /** 尊重 Global Privacy Control（navigator.globalPrivacyControl），默认 true，与 respectDnt 一致 */
+  respectGpc?: boolean
   /** 自动采集屏蔽选择器（与远端下发合并） */
   maskSelectors?: string[]
   /** 回放总开关，默认 false；远端下发 replayEnabled 可开启（下次启动生效）。replay 插件据此常录 */
@@ -222,6 +224,7 @@ export type ResolvedTrackOptions = Required<
     | 'retryBaseDelay'
     | 'retryMaxDelay'
     | 'respectDnt'
+    | 'respectGpc'
     | 'sessionTimeout'
     | 'storagePrefix'
     | 'fetchRemoteConfig'

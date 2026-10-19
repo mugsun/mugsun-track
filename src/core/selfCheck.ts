@@ -34,6 +34,8 @@ export interface SelfCheckState {
   options: ResolvedTrackOptions
   disabled: boolean
   dnt: boolean
+  /** 浏览器开启 Global Privacy Control 且 respectGpc */
+  gpc?: boolean
   optedOut: boolean
   sampled: boolean
   queueSize: number
@@ -186,10 +188,17 @@ export async function runSelfCheck(
       '浏览器开启 Do Not Track，SDK 已停用',
       '尊重用户选择；调试可设 respectDnt=false'
     )
+  } else if (s.gpc) {
+    add(
+      'consent',
+      'warn',
+      '浏览器开启 Global Privacy Control，SDK 已停用',
+      '尊重用户选择；调试可设 respectGpc=false'
+    )
   } else if (s.optedOut) {
     add('consent', 'warn', '用户已 optOut，SDK 不采集', '用户同意后调用 optIn()')
   } else {
-    add('consent', 'ok', 'DNT 未生效、未 optOut')
+    add('consent', 'ok', 'DNT / GPC 未生效、未 optOut')
   }
 
   // ---- privacy
@@ -197,6 +206,7 @@ export async function runSelfCheck(
   // 默认（未设置）也提示；只是 warn，不会 fail（凭证类键不论开关始终脱敏）
   if (o.apiBodyEnabled && o.apiBodyMaskEnabled !== true) priv.push('响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）')
   if (!o.respectDnt) priv.push('respectDnt=false')
+  if (!o.respectGpc) priv.push('respectGpc=false')
   add(
     'privacy',
     priv.length ? 'warn' : 'ok',

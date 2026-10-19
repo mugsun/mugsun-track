@@ -1,4 +1,4 @@
-import { normalizeKey } from '../../core/utils'
+import { normalizeKey, SENSITIVE_KEYS } from '../../core/utils'
 
 /** POST {endpoint}/track/api-body 单条协议体（G102，与后端约定） */
 export interface ApiBodyPayload {
@@ -52,34 +52,11 @@ function base64FromString(s: string): string {
 }
 
 /**
- * 凭证类键（按 normalizeKey 归一后精确匹配）：**始终**整值替换 ***，不受 apiBodyMaskEnabled 控制。
- * 以 URL 敏感参数（core/utils.ts redactSensitiveUrl）为基础，另加 pwd、cookie、会话标识等明确的凭证键。
- * 凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
+ * 凭证类键：与 URL 脱敏共用 core/utils.ts 的 SENSITIVE_KEYS，**始终**整值替换 ***。
+ * URL_ONLY_SENSITIVE_KEYS（code、sign、ticket 等）只用于 URL，响应体里保留原值，
+ * 不受 apiBodyMaskEnabled 控制。凭证端点硬屏蔽在插件过滤链，与本清单无关、不可关
  */
-const CREDENTIAL_KEYS = new Set(
-  [
-    'token',
-    'access_token',
-    'refresh_token',
-    'id_token',
-    'authorization',
-    'api_key',
-    'apikey',
-    'x-api-key',
-    'auth',
-    'secret',
-    'client_secret',
-    'private_key',
-    'password',
-    'passwd',
-    'pwd',
-    'cookie',
-    'set-cookie',
-    'session',
-    'session_id',
-    'jsessionid'
-  ].map(normalizeKey)
-)
+const CREDENTIAL_KEYS = SENSITIVE_KEYS
 
 /** 个人信息类键：仅 apiBodyMaskEnabled 为 true 时替换 ***（默认关，原文上传） */
 const PERSONAL_KEYS = new Set(
@@ -122,10 +99,10 @@ export function maskParsedBody(parsed: unknown, personal: boolean): string | nul
 
 /**
  * JSON body 递归脱敏：凭证类键始终替换；personal 为 true（默认，保持导出函数原有口径）时
- * 个人信息类键也替换。非合法 JSON 原样返回（导出函数保留原口径；上传器不走这条，见 maskJsonBody）
+ * 个人信息类键也替换。解析失败**不返回原文**，整体返回 `***`（P4：原文可能就是凭证）
  */
 export function maskSensitiveBody(raw: string, personal = true): string {
-  return maskJsonBody(raw, personal) ?? raw
+  return maskJsonBody(raw, personal) ?? '***'
 }
 
 /**

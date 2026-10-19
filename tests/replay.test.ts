@@ -548,6 +548,31 @@ describe('replay 插件', () => {
     expect(opts.recordCanvas).toBe(false)
   })
 
+  it('rrweb Meta 事件的 href 按 URL 敏感参数口径脱敏（query 与 hash）', async () => {
+    const { t, cap, stub } = setup()
+    t.client.track('boot')
+    stub.emit({
+      type: 4,
+      timestamp: 1,
+      data: {
+        href: 'https://app.example.com/cb?code=abc&page=2#access_token=t1',
+        width: 1,
+        height: 1
+      }
+    })
+    stub.emit({ type: 3, timestamp: 2, data: { href: 'https://keep.example.com/?code=x' } })
+    await vi.advanceTimersByTimeAsync(5000)
+    await settle()
+    const events = cap.calls.flatMap((c) => decodeChunk(c.payload)) as unknown as Array<{
+      type: number
+      data: { href?: string }
+    }>
+    const meta = events.find((e) => e.type === 4)
+    expect(meta?.data.href).toBe('https://app.example.com/cb?code=***&page=2#access_token=***')
+    // 只处理 Meta，其他事件不动
+    expect(events.find((e) => e.type === 3)?.data.href).toBe('https://keep.example.com/?code=x')
+  })
+
   it('maskAllInputs=true 时所有输入值录成 ***，始终不录的字段不变', () => {
     const opts = setup({}, { maskAllInputs: true }).stub.calls[0]
     expect(opts.maskAllInputs).toBe(true)

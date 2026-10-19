@@ -6,6 +6,7 @@ import type {
 } from '../../types'
 import { createBrowserTransportDeps } from '../../adapters'
 import { isSampled } from '../../core/sampler'
+import { redactSensitiveUrl } from '../../core/utils'
 import { Transport } from '../../core/transport'
 import { ReplayRecorder, type ReplayChunkPayload } from './recorder'
 
@@ -63,6 +64,15 @@ export interface ReplayPluginOptions {
   send?: (payload: ReplayChunkPayload, opts: { preferBeacon: boolean }) => Promise<boolean>
   /** 测试注入：gzip 实现；传 null 强制走明文降级路径 */
   gzip?: ((body: string) => Promise<ArrayBuffer>) | null
+}
+
+/** rrweb Meta 事件（type 4）带完整 location.href：按 URL 敏感参数口径脱敏 */
+function redactMetaHref<T>(event: T): T {
+  const e = event as { type?: unknown; data?: { href?: unknown } }
+  if (e?.type === 4 && e.data && typeof e.data.href === 'string') {
+    return { ...e, data: { ...e.data, href: redactSensitiveUrl(e.data.href) } } as T
+  }
+  return event
 }
 
 /** 默认每 3 分钟一次全量快照（rrweb checkoutEveryNms） */
@@ -178,7 +188,7 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
           }
           if (destroyed) return
           stopRecord = record({
-            emit: (event) => recorder.push(event),
+            emit: (event) => recorder.push(redactMetaHref(event)),
             // 输入值与页面文本默认录原文（maskAllInputs / maskTextSelector 由接入方开启）；
             // password 另经 maskInputOptions 兜底；password、data-track-mask、cc-*、one-time-code
             // 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas

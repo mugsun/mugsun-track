@@ -16,15 +16,22 @@
 - **会话回放默认不遮罩输入值**：新增 `replayPlugin({ maskAllInputs })` 选项，默认 `false`，输入框的值录原文（0.2.0 固定为 `true`，所有输入值录成 `***`）。想保持 0.2.0 的行为请设 `maskAllInputs: true`。
 - **回放始终不录的字段**（不论上面两个选项）：`input[type="password"]`、`data-track-mask` 与 `maskSelectors` 命中的区域、银行卡字段（`autocomplete` 以 `cc-` 开头）、一次性验证码字段（`autocomplete="one-time-code"`）整块不录，canvas 不录。银行卡和一次性验证码是新增的。密码框另外通过 rrweb 的 `maskInputOptions: { password: true }` 兜底。
 - **`apiBodyMaskEnabled` 默认改为 `false`，响应体脱敏拆成两层**（api-body 上传器内部的 `maskEnabled` 同步默认 `false`）：
-  - 凭证类键 **始终** 替换为 `***`，不受开关控制：`token`、`access_token`、`refresh_token`、`id_token`、`authorization`、`api_key`、`apikey`、`x-api-key`、`auth`、`secret`、`client_secret`、`private_key`、`password`、`passwd`、`pwd`、`cookie`、`set-cookie`、`session`、`session_id`、`jsessionid`。键名先去掉 `-`、`_` 再小写后匹配，所以 `accessToken`、`Access-Token`、`ACCESS_TOKEN`、`sessionId` 都算。0.2.0 的清单只有 `token` 等少数几个键，而且只做小写匹配，现在会多替换一些键。
+  - 凭证类键 **始终** 替换为 `***`，不受开关控制：`token`、`access_token`、`refresh_token`、`id_token`、`authorization`、`api_key`、`apikey`、`x-api-key`、`auth`、`secret`、`client_secret`、`private_key`、`password`、`passwd`、`pwd`、`cookie`、`set-cookie`、`session`、`session_id`、`jsessionid`、`jwt`、`access_key`、`secret_key`（与 URL 脱敏共用一份清单）。键名先去掉 `-`、`_` 再小写后匹配，所以 `accessToken`、`Access-Token`、`ACCESS_TOKEN`、`sessionId` 都算。0.2.0 的清单只有 `token` 等少数几个键，而且只做小写匹配，现在会多替换一些键。
   - 个人信息类键（`phone`、`mobile`、`email`、`idcard`、`bankcard`）由 `apiBodyMaskEnabled` 控制，默认原文上传（0.2.0 默认脱敏）。需要脱敏请显式设 `apiBodyMaskEnabled: true`，或远端下发 `1`。
   - 导出的 `maskSensitiveBody(raw, personal = true)` 新增第二个参数，不传时与原来一样两类都替换。
   - content-type 为 JSON 但内容解析失败时，不上传响应体，事件标 `body_skipped: 'unparsable'`（此前会原文上传）。非 JSON 的 content-type 本来就不采集。嵌套超过 8 层的子树整体替换为 `***`（此前原样保留）。凭证端点（`/auth/login` 等）的响应体仍然一律不采集。
 - **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
 - **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）」；回放已加载但没有设 `maskTextSelector` 或 `maskAllInputs: true` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
+- **尊重 Global Privacy Control**：新增 `respectGpc` 选项，默认 `true`，与 `respectDnt` 一致。浏览器 `navigator.globalPrivacyControl === true` 时 SDK 停用，`selfCheck()` 的 consent 项提示。只影响开启 GPC 的用户；调试可设 `respectGpc: false`。
+- **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
+- **两份清单**：凭证键清单（`token`、`access_token`、`client_secret`、`session`、`session_id`、`x-api-key`、`cookie`、`jwt`、`access_key`、`secret_key` 等）URL、hash、referrer 与响应体共用；`code`、`sign`、`signature`、`ticket`、`otp` 单列为 URL 专用清单，只在查询串、hash、referrer 里替换。这几个键在响应体里常是业务字段，比如 `{"code":0,"msg":"ok"}`，保留原值，方便看接口错误、复现问题。两份清单都按归一后精确匹配，不做子串匹配，`codeType`、`errCode`、`ticketCount` 保留。
+- **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复
+
+- **页面 URL 与 referrer 脱敏**：公共属性 `referrer`（`$pageview`、`$session_start` 等所有事件都带）、自动采集的链接 `href`、资源加载错误的 `resource_url`、回放 rrweb Meta 事件里的 `href`，此前都是原文，现在都经过 URL 敏感参数脱敏。`url_path` 本来就只有 pathname，不含 query 和 hash。
+- **`maskSensitiveBody` 解析失败不再返回原文**：导出函数遇到非法 JSON 时整体返回 `***`。原文可能就是凭证（如 `token=...` 形式的文本）。上传器本来就丢弃这类响应体，行为不变。
 
 - 错误堆栈清洗：① 帧 URL 去掉 query / hash（常带 token、签名），保留 `:行:列`，错误指纹也按去掉后的堆栈计算，同一错误不会因 token 不同被拆成多组；② props 总量超过 16KB 时先缩 `stack`（按 UTF-8 字节），不再让服务端从尾部摘掉其它属性，4096 个中文字符的堆栈约 12KB，加上其它属性很容易超限；③ 截断不再拆开 emoji 等代理对
 
