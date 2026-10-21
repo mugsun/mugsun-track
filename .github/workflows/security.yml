@@ -1,0 +1,87 @@
+name: Security scan
+
+# 清单 3.1、3.7、3.10：osv-scanner + pnpm audit，push/PR 时跑，每天定时再跑一次；
+# 定时任务失败自动开 issue（已有未关 issue 时只追加评论）
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 1 * * *' # 每天 09:17（北京时间）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # 工具钉版本 + 哈希，下载后校验，不符即失败（清单 3.7）
+  OSV_SCANNER_VERSION: v2.7.0
+  OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+
+jobs:
+  osv:
+    name: osv-scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install osv-scanner (pinned, sha256 verified)
+        run: |
+          curl -fsSL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+          sudo mv osv-scanner /usr/local/bin/osv-scanner
+
+      # 退出码 0 = 无漏洞，1 = 有漏洞（交给 osv-gate.py 按严重度判断），其他 = 工具出错
+      - name: Scan pnpm-lock.yaml
+        run: |
+          rc=0
+          osv-scanner scan source --lockfile pnpm-lock.yaml --format json --output osv.json || rc=$?
+          if [ "$rc" -gt 1 ]; then echo "::error::osv-scanner failed (rc=$rc)"; exit "$rc"; fi
+
+      - name: Gate (High/Critical with a fix fails, Medium warns)
+        run: python3 scripts/osv-gate.py osv.json osv-scanner.toml
+
+  audit:
+    name: pnpm audit (high)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      # 只读 lockfile 查询 advisories，不装依赖、不跑安装脚本
+      - run: pnpm audit --audit-level=high
+
+  notify:
+    name: Open issue on scheduled failure
+    needs: [osv, audit]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="每日安全扫描失败"
+          num=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          body="$(date -u +%F) 的每日扫描失败：$RUN_URL"
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body
+          
+          osv-scanner 或 pnpm audit 发现需要处理的漏洞（或工具本身出错），详见运行日志。
+          同一问题再次失败时只在本 issue 追加评论。"
+          fi
