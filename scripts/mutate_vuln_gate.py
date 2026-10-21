@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.1.0 / gate-audit.py 1.0.0 分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.1.0 / gate-audit.py 1.1.0 分发、一起校验哈希。
 """变异检查（安全官 S5）：逐个把关键规则改坏，确认测试集能发现。
 
 用法：python3 scripts/mutate_vuln_gate.py
@@ -43,10 +43,19 @@ MUTANTS = [
      '("cvss.score", finite(cv.get("score")) if cv.get("score") else None),\n                       ("cvss.vectorString"'),
     ("忽略列表过期判断失效", GATE, "if until < today:", "if until < today - dt.timedelta(days=1):"),
     ("v3.0 向上取整写错", GATE, "    return -(-i // 10000) / 10.0", "    return (i // 10000) / 10.0"),
-    ("审计不查受保护文件", AUDIT, "    for f in sorted(set(names) & set(PROTECTED)):",
+    ("审计不查受保护文件", AUDIT, "    for f in sorted({n for n in names if is_protected(n)}):",
      "    for f in []:"),
-    ("审计不保护 osv-scanner.toml", AUDIT, '".gitleaks.toml", "osv-scanner.toml",', '".gitleaks.toml",'),
-    ("审计不查行内放行注释", AUDIT, "elif line.startswith(\"+\") and ALLOW_MARK in line and cur:",
+    ("审计不保护 osv-scanner.toml", AUDIT, 'PROTECTED_NAMES = ("osv-scanner.toml", ', 'PROTECTED_NAMES = ('),
+    ("审计不保护 workflows 目录（G1 / A1）", AUDIT, 'PROTECTED_DIRS = (".github/workflows/", ".github/actions/")',
+     'PROTECTED_DIRS = (".github/actions/",)'),
+    ("审计不保护本地 action", AUDIT, 'PROTECTED_DIRS = (".github/workflows/", ".github/actions/")',
+     'PROTECTED_DIRS = (".github/workflows/",)'),
+    ("审计只匹配根目录配置", AUDIT, 'or path.rsplit("/", 1)[-1] in PROTECTED_NAMES)', "or path in PROTECTED_NAMES)"),
+    ("审计不保护 CODEOWNERS", AUDIT, '    ".github/CODEOWNERS",\n', ""),
+    ("base 有脚本缺哈希表放行", AUDIT, 'if expected is None and show(repo, base, "scripts/gate-audit.py") is not None:',
+     "if False:"),
+    ("放行注释区分大小写", AUDIT, "ALLOW_MARK in line.lower() and cur:", "ALLOW_MARK in line and cur:"),
+    ("审计不查行内放行注释", AUDIT, "elif line.startswith(\"+\") and ALLOW_MARK in line.lower() and cur:",
      "elif False:"),
     ("审计不查 uses: 引用", AUDIT, "        if u0 != u1:", "        if False:"),
     ("审计不查工具钉值", AUDIT, "        if p0 != p1:", "        if False:"),

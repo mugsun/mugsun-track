@@ -99,6 +99,12 @@
   - 有值但不合法的分数（NaN、-0.0、v4 等）按 10.0 计。
 - 新增 gate audit：改了门禁文件、哈希或 uses: SHA 时 CI 变红。
   - osv-scanner.toml 也受保护，增改忽略条目要安全官复核。
+- gate-audit 升到 1.1.0（安全官 G1、代码质量官 A1/A2）。
+  - .github/workflows/、.github/actions/、CODEOWNERS 任何改动都判红。
+  - 子目录的 osv / gitleaks 配置、check-workflows.py 也受保护。
+  - base 为空、全 0 或不可达直接失败；首次引入也判红。
+  - PR 改用 merge-base 比较；base 有脚本缺哈希表判失败。
+  - push 上审计失败自动开 issue（只有 issues: write）。
 - 新增 .github/CODEOWNERS（只作标注）和变异检查脚本。
 
 ### 发版流程

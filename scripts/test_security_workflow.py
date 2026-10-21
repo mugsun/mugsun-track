@@ -34,19 +34,45 @@ class SecurityWorkflow(unittest.TestCase):
             self.assertLess(first, body.index("scripts/vuln-gate.py"))
 
     def gate_audit_job(self):
-        return self.text.split("\n  gate-audit:")[1].split("\n  gitleaks:")[0]
+        return self.text.split("\n  gate-audit:")[1].split("\n  gate-audit-notify:")[0]
 
     def test_gate_audit_on_push_and_pr(self):
         job = self.gate_audit_job()
         self.assertIn("if: github.event_name == 'push' || github.event_name == 'pull_request'", job)
         self.assertIn("fetch-depth: 0", job)
         self.assertIn("github.event.pull_request.base.sha || github.event.before", job)
+        self.assertIn('BASE_SHA=$(git merge-base "$BASE_SHA" HEAD)', job)
 
     def test_gate_audit_prefers_base_copy(self):
         job = self.gate_audit_job()
         show = job.index('git show "${BASE_SHA}:scripts/gate-audit.py"')
         self.assertLess(show, job.index('python3 "$script" --base "$BASE_SHA"'))
         self.assertNotIn("python3 scripts/gate-audit.py", job)
+
+    def test_gate_audit_bad_base_exits_before_head_script(self):  # 代码质量官 A2
+        job = self.gate_audit_job()
+        cp = job.index("cp scripts/gate-audit.py")
+        for guard in ('*) echo "::error::base 全 0', 'git cat-file -e "${BASE_SHA}^{commit}"'):
+            self.assertLess(job.index(guard), cp)
+        head = job[:cp]
+        self.assertGreaterEqual(head.count("exit 1"), 2)
+        self.assertIn('git cat-file -e "${BASE_SHA}:scripts/gate-audit.py"', head)
+
+    def test_gate_audit_first_introduction_is_red(self):
+        job = self.gate_audit_job()
+        fallback = job.split("cp scripts/gate-audit.py")[0].rsplit("else", 1)[1]
+        self.assertIn("::error::", fallback)
+        self.assertNotIn("::notice::", job)
+        self.assertIn('if [ "$first" -eq 1 ]; then exit 1; fi', job)
+        self.assertIn('exit "$rc"', job)
+
+    def test_gate_audit_failure_opens_issue(self):  # 安全官 G1-3
+        job = self.text.split("\n  gate-audit-notify:")[1].split("\n  # 清单 3.2")[0]
+        self.assertIn("needs: [gate-audit]", job)
+        self.assertIn("if: failure() && github.event_name == 'push'", job)
+        perms = job.split("permissions:")[1].split("steps:")[0].split()
+        self.assertEqual(perms, ["issues:", "write"])
+        self.assertNotIn("actions/checkout", job)
 
     def test_self_tests_include_audit_and_mutation(self):
         osv = self.text.split("\n  osv:")[1].split("\n  audit:")[0]

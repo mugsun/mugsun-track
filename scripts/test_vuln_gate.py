@@ -772,6 +772,11 @@ class Scope(Base):
             e, _ = self.check(entry(bad, "2026-10-21", "2026-10-30"))
             self.assertTrue(any("scope 只能是" in x for x in e), (bad, e))
 
+    def test_scope_with_whitespace_rejected(self):  # 代码质量官可选 2
+        for bad in ('" prod"', '"prod "', '" "'):
+            e, _ = self.check(entry(bad, "2026-10-21", "2026-10-30"))
+            self.assertTrue(any("scope 只能是" in x for x in e), (bad, e))
+
     def test_prod_30_days_ok(self):
         self.assertEqual(self.check(entry('"prod"', "2026-10-21", "2026-11-20"))[0], [])
 

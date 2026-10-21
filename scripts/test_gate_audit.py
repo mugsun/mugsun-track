@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.0.0 一起分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.1.0 一起分发、一起校验哈希。
 """gate-audit.py 反例集（清单 3.15、安全官 S2 / F1）。用法：python3 scripts/test_gate_audit.py"""
 import contextlib
 import hashlib
@@ -17,6 +17,11 @@ spec.loader.exec_module(ga)
 
 ALLOW = "gitleaks" + ":allow"
 WF = """name: s
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 env:
   OSV_SCANNER_SHA256: aaaa
 jobs:
@@ -25,11 +30,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Verify
         run: sha256sum -c scripts/vuln-gate.sha256
-      - run: python3 scripts/vuln-gate.py results x
+      - run: python3 scripts/vuln-gate.py results --exit-code "$OSV_RC" --require-packages x
   audit:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     steps:
-      - run: python3 scripts/gate-audit.py --base "$BASE_SHA"
+      - name: Audit
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: python3 scripts/gate-audit.py --base "$BASE_SHA"
 """
+WF_PATH = ".github/workflows/security.yml"
 
 
 class Repo(unittest.TestCase):
@@ -82,10 +92,81 @@ class Repo(unittest.TestCase):
         self.commit("feat")
         self.assertEqual(self.errs(), [])
 
-    def test_workflow_change_without_guards_passes(self):
-        self.write(".github/workflows/security.yml", WF.replace("name: s", "name: scan"))
+    def test_any_workflow_change_is_red(self):  # 安全官 G1、代码质量官 A1
+        self.write(WF_PATH, WF.replace("name: s", "name: scan"))
         self.commit("rename")
+        self.assertFlag(f"受保护的门禁文件 {WF_PATH}")
+
+    def assertWorkflowRed(self, old, new, msg):
+        self.assertEqual(WF.count(old), 1, old)
+        self.write(WF_PATH, WF.replace(old, new))
+        self.commit(msg)
+        self.assertFlag(f"受保护的门禁文件 {WF_PATH}")
+
+    def test_bypass_if_false(self):
+        self.assertWorkflowRed("  audit:\n    if: github.event_name == 'push' || "
+                               "github.event_name == 'pull_request'",
+                               "  audit:\n    if: false", "if false")
+
+    def test_bypass_drop_if(self):
+        self.assertWorkflowRed("    if: github.event_name == 'push' || "
+                               "github.event_name == 'pull_request'\n", "", "drop if")
+
+    def test_bypass_drop_pull_request_trigger(self):
+        self.assertWorkflowRed("  pull_request:\n    branches: [main]\n", "", "no pr")
+
+    def test_bypass_continue_on_error(self):
+        self.assertWorkflowRed("      - name: Audit\n",
+                               "      - name: Audit\n        continue-on-error: true\n", "coe")
+
+    def test_bypass_or_true_on_audit(self):
+        self.assertWorkflowRed('--base "$BASE_SHA"', '--base "$BASE_SHA" || true', "or true")
+
+    def test_bypass_base_sha_is_head(self):
+        self.assertWorkflowRed("${{ github.event.before }}", "${{ github.sha }}", "base=head")
+
+    def test_bypass_or_true_on_gate(self):
+        self.assertWorkflowRed("--require-packages x", "--require-packages x || true", "gate")
+
+    def test_bypass_drop_require_packages(self):
+        self.assertWorkflowRed("--require-packages x", "x", "drop require")
+
+    def test_bypass_exit_code_zero(self):
+        self.assertWorkflowRed('--exit-code "$OSV_RC"', "--exit-code 0", "rc0")
+
+    def test_bypass_echo_keeps_keywords(self):
+        self.assertWorkflowRed('run: python3 scripts/gate-audit.py --base "$BASE_SHA"',
+                               'run: echo "python3 scripts/gate-audit.py --base"', "echo")
+
+    def test_protected_dirs_and_names(self):
+        for rel in (".github/CODEOWNERS", ".github/actions/gate/action.yml",
+                    ".github/workflows/new.yml", "web/osv-scanner.toml",
+                    "server/.gitleaks.toml", "pkg/a/.gitleaksignore",
+                    "scripts/check-workflows.py", "scripts/test_security_workflow.py"):
+            with self.subTest(rel=rel):
+                self.write(rel, "x\n")
+                self.commit(rel)
+                e = self.errs()
+                self.assertTrue(any(f"受保护的门禁文件 {rel}" in x for x in e), e)
+
+    def test_other_github_file_passes(self):
+        self.write(".github/COMMIT_CONVENTION.md", "x\n")
+        self.write("docs/osv-scanner.toml.md", "x\n")
+        self.commit("docs")
         self.assertEqual(self.errs(), [])
+
+    def test_base_has_audit_but_no_hash_table(self):
+        self.write("scripts/gate-audit.py", "print(0)\n")
+        self.git("rm", "-q", "scripts/vuln-gate.sha256")
+        self.base = self.commit("no table")
+        self.write("src/a.ts", "y\n")
+        self.commit("feat")
+        self.assertFlag("却没有 scripts/vuln-gate.sha256")
+
+    def test_inline_allow_case_insensitive(self):
+        self.write("src/a.ts", f"const k = 'x' // {ALLOW.upper()}\n")
+        self.commit("allow")
+        self.assertFlag("新增了 gitleaks 行内放行注释")
 
     def test_protected_files(self):
         for rel in ga.PROTECTED:
@@ -164,7 +245,8 @@ class Repo(unittest.TestCase):
 
     def test_gate_call_deleted(self):
         self.write(".github/workflows/security.yml",
-                   WF.replace("python3 scripts/vuln-gate.py results x", "echo skip"))
+                   WF.replace('python3 scripts/vuln-gate.py results --exit-code "$OSV_RC" '
+                              "--require-packages x", "echo skip"))
         self.commit("drop gate")
         self.assertFlag("scripts/vuln-gate.py 由 1 处减为 0 处")
 

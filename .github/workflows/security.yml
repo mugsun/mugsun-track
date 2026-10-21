@@ -97,11 +97,12 @@ jobs:
           python3 scripts/vuln-gate.py results --format pnpm-audit --exit-code "$AUDIT_RC" \
             --ignores osv-scanner.toml --require-packages audit.json
 
-  # 清单 3.15、安全官 S2 / F1：门禁文件变更审计。只在 push / PR 上跑：
-  # push 比 github.event.before，PR 比 base。改了 .gitleaksignore、.gitleaks.toml、
-  # 共享脚本或其哈希、uses: 引用的 SHA、工具钉值，或删了校验步骤，CI 变红，
-  # 提交说明写清理由并交安全官复核。审计脚本优先取 base 上的版本，
-  # 本次改了审计脚本本身也绕不过；base 上还没有时（首次引入）用本次的。
+  # 清单 3.15、安全官 S2 / F1 / G1、代码质量官 A1 / A2：门禁文件变更审计，只在 push / PR 上跑。
+  # push 比 github.event.before，PR 比 merge-base(base, HEAD)。.github/workflows/** 任何改动、
+  # 共享脚本或哈希、osv / gitleaks 配置等受保护文件有改动就变红，交安全官复核。
+  # base 为空、全 0 或不可达时直接失败，不交给本次提交里的脚本判断；
+  # 只有 base 存在但还没有 gate-audit.py（首次引入）时才用本次的脚本，并且同样判红。
+  # 注意：本 job 跑的是本次提交的 workflow，改 workflow 本身仍可绕过，见 README「已知局限」。
   # 脚本只吃 --base 参数，以后可原样搬进 mugsun/.github 的 reusable workflow。
   gate-audit:
     name: gate audit
@@ -116,14 +117,62 @@ jobs:
 
       - name: Audit gate changes
         env:
+          EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          script="$RUNNER_TEMP/gate-audit.py"
-          if ! git show "${BASE_SHA}:scripts/gate-audit.py" > "$script" 2>/dev/null; then
-            echo "::notice::base 上还没有 gate-audit.py，用本次提交的版本"
-            cp scripts/gate-audit.py "$script"
+          case "$BASE_SHA" in
+            "" | *[!0]*) ;;
+            *) echo "::error::base 全 0（新分支首推或 tag 推送），无法审计门禁改动"; exit 1 ;;
+          esac
+          if [ -z "$BASE_SHA" ] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::base '${BASE_SHA}' 为空或不可达，无法审计门禁改动"
+            exit 1
           fi
-          python3 "$script" --base "$BASE_SHA"
+          if [ "$EVENT" = pull_request ]; then
+            BASE_SHA=$(git merge-base "$BASE_SHA" HEAD)
+          fi
+          script="$RUNNER_TEMP/gate-audit.py"
+          first=0
+          if git cat-file -e "${BASE_SHA}:scripts/gate-audit.py" 2>/dev/null; then
+            git show "${BASE_SHA}:scripts/gate-audit.py" > "$script"
+          else
+            echo "::error::base 上还没有 gate-audit.py（首次引入），本次用提交里的版本，需安全官复核"
+            cp scripts/gate-audit.py "$script"
+            first=1
+          fi
+          rc=0
+          python3 "$script" --base "$BASE_SHA" || rc=$?
+          if [ "$first" -eq 1 ]; then exit 1; fi
+          exit "$rc"
+
+  # gate audit 在 push 上失败时开 issue（安全官 G1-3）：直推 main 时审计只是事后告警，要有人看到
+  gate-audit-notify:
+    name: Open issue on gate audit failure
+    needs: [gate-audit]
+    if: failure() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="门禁审计失败，需安全官复核"
+          num=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          body="提交 ${SHA} 改动了门禁文件或 workflow，gate audit 判红：$RUN_URL"
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body
+
+          请安全官看运行日志，确认改动符合提交说明里的理由后，在本 issue 记一笔再关闭。"
+          fi
 
   # 清单 3.2、3.6：密钥扫描，push、PR 和每日定时都跑；fetch-depth: 0 拿全历史
   gitleaks:

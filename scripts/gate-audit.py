@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================================
-#  gate-audit.py  门禁文件变更审计  版本 1.0.0
+#  gate-audit.py  门禁文件变更审计  版本 1.1.0
 #  共享文件，禁止各仓单独修改（与 vuln-gate.py 同一套分发和哈希）。
 #  只依赖 git 和 Python 标准库，参数全走命令行，以后可原样搬进
 #  mugsun/.github 的 reusable workflow（inputs.base -> --base）。
@@ -8,17 +8,22 @@
 """对比 base..head，发现门禁被改动就判失败（清单 3.15、安全官 S2 / F1）。
 
 用法: gate-audit.py --base <sha> [--head HEAD] [--repo .]
-  push：base = github.event.before；pull_request：base = pull_request.base.sha。
+  push：base = github.event.before；pull_request：base = merge-base(pull_request.base.sha, HEAD)
+  （merge-base 由 workflow 的 shell 算好再传入，脚本接口保持不变）。
 
 判失败（每条都提示「提交说明写清理由，并交安全官复核」）：
-  1. 改动（含新增、删除、改名）了受保护文件：.gitleaksignore、.gitleaks.toml、
-     osv-scanner.toml（新增或修改忽略条目都要复核）、
-     scripts/vuln-gate.py、scripts/vuln-gate.sha256、scripts/test_vuln_gate.py、
-     scripts/gate-audit.py、scripts/test_gate_audit.py、scripts/mutate_vuln_gate.py。
-  2. 新增行里出现 gitleaks 的行内放行注释（gitleaks 加 :allow）。
-  3. .github/workflows/ 下：uses: 引用（含 @SHA）有增删改；*_SHA256 钉值有变化；
-     校验或门禁调用（sha256sum -c、vuln-gate.py、gate-audit.py）的次数变少。
-  4. head 里的共享脚本和 base 上 scripts/vuln-gate.sha256 记录的哈希不一致。
+  1. 改动（含新增、删除、改名）了受保护文件：
+     - 整个 .github/workflows/ 和 .github/actions/ 目录（安全官 G1、代码质量官 A1：
+       if: false、|| true、continue-on-error、改 BASE_SHA 等改法逐行比较拦不全，
+       所以任何改动都判红，交安全官复核）；.github/CODEOWNERS；
+     - 任意目录下的 osv-scanner.toml、.gitleaks.toml、.gitleaksignore；
+     - scripts/ 下的共享门禁脚本、哈希表，以及 check-workflows.py、test_security_workflow.py。
+  2. 新增行里出现 gitleaks 的行内放行注释（gitleaks 加 :allow，不区分大小写）。
+  3. workflow 的细粒度提示（只用来说明改了什么，判红已由第 1 条保证）：uses: 引用
+     （含 @SHA）有增删改；*_SHA256 钉值有变化；sha256sum -c、vuln-gate.py、gate-audit.py
+     的出现次数变少。
+  4. head 里的共享脚本和 base 上 scripts/vuln-gate.sha256 记录的哈希不一致；
+     base 上已有 gate-audit.py 却没有哈希表。
   5. base 为空、全 0 或在仓库里找不到（无法比较也按失败处理）。
 """
 import argparse
@@ -28,16 +33,19 @@ import re
 import subprocess
 import sys
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 PROTECTED = (
-    ".gitleaksignore", ".gitleaks.toml", "osv-scanner.toml",
+    ".github/CODEOWNERS",
     "scripts/vuln-gate.py", "scripts/vuln-gate.sha256", "scripts/test_vuln_gate.py",
     "scripts/gate-audit.py", "scripts/test_gate_audit.py", "scripts/mutate_vuln_gate.py",
+    "scripts/check-workflows.py", "scripts/test_security_workflow.py",
 )
+PROTECTED_DIRS = (".github/workflows/", ".github/actions/")
+PROTECTED_NAMES = ("osv-scanner.toml", ".gitleaks.toml", ".gitleaksignore")  # 任意目录
 HASH_FILE = "scripts/vuln-gate.sha256"
 WORKFLOWS = ".github/workflows/"
-ALLOW_MARK = "gitleaks" + ":allow"   # 拆开写，免得本文件自己命中
+ALLOW_MARK = "gitleaks" + ":allow"   # 拆开写，免得本文件自己命中；比较时不区分大小写
 GUARDS = ("sha256sum -c", "scripts/vuln-gate.py", "scripts/gate-audit.py")
 HINT = "提交说明写清理由，并交安全官复核"
 
@@ -52,6 +60,11 @@ def git(repo, *args, check=True):
 def show(repo, rev, path):
     r = git(repo, "show", f"{rev}:{path}", check=False)
     return r.stdout if r.returncode == 0 else None
+
+
+def is_protected(path):
+    return (path in PROTECTED or path.startswith(PROTECTED_DIRS)
+            or path.rsplit("/", 1)[-1] in PROTECTED_NAMES)
 
 
 def workflow_facts(text):
@@ -76,14 +89,14 @@ def audit(repo, base, head="HEAD"):
     if git(repo, "cat-file", "-e", f"{base}^{{commit}}", check=False).returncode != 0:
         return [f"base {base} 在仓库里找不到（checkout 需 fetch-depth: 0）；{HINT}"]
     names = git(repo, "diff", "--no-renames", "--name-only", base, head).stdout.split()
-    for f in sorted(set(names) & set(PROTECTED)):
+    for f in sorted({n for n in names if is_protected(n)}):
         errs.append(f"改动了受保护的门禁文件 {f}；{HINT}")
     diff = git(repo, "diff", "--no-renames", "-U0", base, head).stdout
     cur = None
     for line in diff.splitlines():
         if line.startswith("+++ "):
             cur = line[6:] if line.startswith("+++ b/") else None
-        elif line.startswith("+") and ALLOW_MARK in line and cur:
+        elif line.startswith("+") and ALLOW_MARK in line.lower() and cur:
             errs.append(f"{cur} 新增了 gitleaks 行内放行注释；{HINT}")
     wf = sorted({n for n in names if n.startswith(WORKFLOWS)})
     for f in wf:
@@ -98,6 +111,8 @@ def audit(repo, base, head="HEAD"):
             if g1[g] < g0[g]:
                 errs.append(f"{f} 删了校验或门禁步骤（{g} 由 {g0[g]} 处减为 {g1[g]} 处）；{HINT}")
     expected = show(repo, base, HASH_FILE)
+    if expected is None and show(repo, base, "scripts/gate-audit.py") is not None:
+        errs.append(f"base 上有 scripts/gate-audit.py 却没有 {HASH_FILE}，无法核对共享脚本；{HINT}")
     if expected is not None:
         for line in expected.splitlines():
             parts = line.split()
