@@ -1,0 +1,11 @@
+# 门禁相关文件（清单 3.15）。只起标注作用：本仓直接推 main、不走 PR，
+# 分支保护也没开「需要 code owner 审核」，真正的拦截靠 security.yml 的 gate audit。
+/scripts/vuln-gate* @mugsun
+/scripts/test_vuln_gate.py @mugsun
+/scripts/gate-audit.py @mugsun
+/scripts/test_gate_audit.py @mugsun
+/scripts/mutate_vuln_gate.py @mugsun
+/.github/workflows/ @mugsun
+/.gitleaks.toml @mugsun
+/.gitleaksignore @mugsun
+/.github/CODEOWNERS @mugsun

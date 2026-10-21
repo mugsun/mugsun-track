@@ -33,6 +33,35 @@ class SecurityWorkflow(unittest.TestCase):
             first = body.index("sha256sum -c scripts/vuln-gate.sha256")
             self.assertLess(first, body.index("scripts/vuln-gate.py"))
 
+    def gate_audit_job(self):
+        return self.text.split("\n  gate-audit:")[1].split("\n  gitleaks:")[0]
+
+    def test_gate_audit_on_push_and_pr(self):
+        job = self.gate_audit_job()
+        self.assertIn("if: github.event_name == 'push' || github.event_name == 'pull_request'", job)
+        self.assertIn("fetch-depth: 0", job)
+        self.assertIn("github.event.pull_request.base.sha || github.event.before", job)
+
+    def test_gate_audit_prefers_base_copy(self):
+        job = self.gate_audit_job()
+        show = job.index('git show "${BASE_SHA}:scripts/gate-audit.py"')
+        self.assertLess(show, job.index('python3 "$script" --base "$BASE_SHA"'))
+        self.assertNotIn("python3 scripts/gate-audit.py", job)
+
+    def test_self_tests_include_audit_and_mutation(self):
+        osv = self.text.split("\n  osv:")[1].split("\n  audit:")[0]
+        for t in ("test_vuln_gate.py", "test_gate_audit.py", "mutate_vuln_gate.py"):
+            self.assertIn(f"python3 scripts/{t}", osv)
+
+    def test_codeowners_marks_gate_files(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        co = (root / ".github/CODEOWNERS").read_text(encoding="utf-8")
+        for pat in ("/scripts/vuln-gate*", "/scripts/test_vuln_gate.py", "/scripts/gate-audit.py",
+                    "/scripts/test_gate_audit.py", "/scripts/mutate_vuln_gate.py",
+                    "/.github/workflows/", "/.gitleaks.toml", "/.gitleaksignore",
+                    "/.github/CODEOWNERS"):
+            self.assertIn(f"{pat} @mugsun", co)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

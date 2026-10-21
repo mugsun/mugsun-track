@@ -46,7 +46,9 @@ jobs:
       - name: Self-test vuln-gate
         run: |
           python3 scripts/test_vuln_gate.py
+          python3 scripts/test_gate_audit.py
           python3 scripts/test_security_workflow.py
+          python3 scripts/mutate_vuln_gate.py
 
       - name: Check osv-scanner.toml
         run: python3 scripts/vuln-gate.py config osv-scanner.toml --effective "$RUNNER_TEMP/osv-effective.toml"
@@ -94,6 +96,34 @@ jobs:
         run: |
           python3 scripts/vuln-gate.py results --format pnpm-audit --exit-code "$AUDIT_RC" \
             --ignores osv-scanner.toml --require-packages audit.json
+
+  # 清单 3.15、安全官 S2 / F1：门禁文件变更审计。只在 push / PR 上跑：
+  # push 比 github.event.before，PR 比 base。改了 .gitleaksignore、.gitleaks.toml、
+  # 共享脚本或其哈希、uses: 引用的 SHA、工具钉值，或删了校验步骤，CI 变红，
+  # 提交说明写清理由并交安全官复核。审计脚本优先取 base 上的版本，
+  # 本次改了审计脚本本身也绕不过；base 上还没有时（首次引入）用本次的。
+  # 脚本只吃 --base 参数，以后可原样搬进 mugsun/.github 的 reusable workflow。
+  gate-audit:
+    name: gate audit
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Audit gate changes
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          script="$RUNNER_TEMP/gate-audit.py"
+          if ! git show "${BASE_SHA}:scripts/gate-audit.py" > "$script" 2>/dev/null; then
+            echo "::notice::base 上还没有 gate-audit.py，用本次提交的版本"
+            cp scripts/gate-audit.py "$script"
+          fi
+          python3 "$script" --base "$BASE_SHA"
 
   # 清单 3.2、3.6：密钥扫描，push、PR 和每日定时都跑；fetch-depth: 0 拿全历史
   gitleaks:

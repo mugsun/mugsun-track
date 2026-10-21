@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.0.0 一起分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.1.0 一起分发、一起校验哈希。
 """vuln-gate.py 共享反例集（清单 3.11、3.13）。用法：python3 scripts/test_vuln_gate.py
 
 分组：
@@ -9,6 +9,11 @@
   History           —— 各仓历史缺陷（docs / pc / start / uniappx）逐类复现
   PnpmAudit / NpmAudit —— 其他输入格式
   Cvss              —— 官方公式的已知分数
+  Unreferenced      —— 1.1.0：没被 group 引用的漏洞单独判定（代码质量官阻塞 1）
+  OsvKeys           —— 1.1.0：groups / vulnerabilities 只出现一个判失败
+  Scope             —— 1.1.0：scope 必填，prod 30 天、dev 90 天（阻塞 2、安全官 S1）
+  NpmExtra          —— 1.1.0：cvss.score 0 计入、无 GHSA 不可忽略
+  Severity 另含 S3（-0.0）、S4（不合法值按 10.0，不被 LOW 压下）反例
 """
 import contextlib
 import datetime as dt
@@ -48,7 +53,7 @@ def doc(*pkgs):
 
 
 ESBUILD_LOW = pkg("esbuild", "0.27.7", "GHSA-g7r4-m6w7-qqqr", "2.5", "0.28.1")
-GOOD = ('[[IgnoredVulns]]\nid = "GHSA-2v37-7h3g-55p8"\nadded = 2026-10-21\n'
+GOOD = ('[[IgnoredVulns]]\nid = "GHSA-2v37-7h3g-55p8"\nscope = "dev"\nadded = 2026-10-21\n'
         'ignoreUntil = 2027-01-19\nreason = "无修复版本"\n')
 
 
@@ -294,13 +299,15 @@ class Severity(Base):
             self.fails(doc(pkg("x", "1.0.0", "GHSA-i", ..., vuln_extra=extra)), 1, "无法判定严重度")
 
     def test_label_non_string(self):
-        for bad in (7, 7.5, None, True, ["high"], {"level": "high"}):
+        for bad in (7, 7.5, True, ["high"], {"level": "high"}):
             self.fails(doc(pkg("x", "1.0.0", "GHSA-j", ..., vuln_extra={
-                "database_specific": {"severity": bad}})), 1, "无法判定严重度")
+                "database_specific": {"severity": bad}})), 1, "不合法，按 10.0")
+        self.fails(doc(pkg("x", "1.0.0", "GHSA-j", ..., vuln_extra={
+            "database_specific": {"severity": None}})), 1, "无法判定严重度")
 
     def test_unknown_label(self):
         self.fails(doc(pkg("x", "1.0.0", "GHSA-k", ..., vuln_extra={
-            "database_specific": {"severity": "urgent"}})), 1, "无法判定严重度")
+            "database_specific": {"severity": "urgent"}})), 1, "不合法，按 10.0")
 
     def test_vector_only_98_fails(self):
         e = self.fails(doc(pkg("x", "1.0.0", "GHSA-l", ..., vuln_extra={
@@ -327,34 +334,58 @@ class Severity(Base):
             "database_specific": {"severity": "critical"}})), 1, "严重度 9.0")
 
     def test_nan_inf_score_not_a_source(self):
-        for bad in ("NaN", "nan", "inf", "-inf", "Infinity", "11", "-1"):
-            self.fails(doc(pkg("x", "1.0.0", "GHSA-p", bad)), 1, "无法判定严重度")
+        for bad in ("NaN", "nan", "inf", "-inf", "Infinity", "11", "-1", "abc",
+                    float("nan"), float("inf"), -0.5, 10.01):
+            self.fails(doc(pkg("x", "1.0.0", "GHSA-p", bad)), 1, "不合法，按 10.0")
 
-    def test_nan_with_valid_low_vector_uses_vector(self):
-        self.passes(doc(pkg("x", "1.0.0", "GHSA-q", "NaN", vuln_extra={
-            "severity": [{"type": "CVSS_V3", "score": V53}]})), 1)
+    def test_negative_zero_is_10(self):  # 安全官 S3
+        for bad in ("-0.0", "-0", -0.0):
+            self.fails(doc(pkg("x", "1.0.0", "GHSA-p", bad)), 1, "不合法，按 10.0")
+        self.passes(doc(pkg("x", "1.0.0", "GHSA-p", "0.0")), 1)
+        self.passes(doc(pkg("x", "1.0.0", "GHSA-p", 0)), 1)
+
+    def test_nan_with_valid_low_vector_still_fails(self):  # S4：不合法值不能被丢掉
+        self.fails(doc(pkg("x", "1.0.0", "GHSA-q", "NaN", vuln_extra={
+            "severity": [{"type": "CVSS_V3", "score": V53}]})), 1, "不合法，按 10.0")
+
+    def test_invalid_sources_not_masked_by_low_label(self):  # 安全官 S4 反例
+        low = {"database_specific": {"severity": "LOW"}}
+        cases = [("NaN", []), ("Infinity", []), ("-0.0", []),
+                 (..., [{"type": "CVSS_V3", "score": "CVSS:3.1/AV:N"}]),
+                 (..., [{"type": "CVSS_V3", "score": "garbage"}]),
+                 (..., [{"type": "CVSS_V4", "score": V4}])]
+        for ms, sev in cases:
+            extra = dict(low, severity=sev)
+            self.fails(doc(pkg("x", "1.0.0", "GHSA-q", ms, vuln_extra=extra)), 1, "不合法，按 10.0")
+
+    def test_pnpm_nan_score_with_low_label_fails(self):  # S4 pnpm 反例
+        self.fails(audit({"1": adv("low", cvss={"score": "NaN", "vectorString": None})}), 1,
+                   "不合法，按 10.0", fmt="pnpm-audit")
 
     def test_max_severity_not_string(self):
-        for bad in (None, True, [], {}):
-            self.fails(doc(pkg("x", "1.0.0", "GHSA-r", bad)), 1, "无法判定严重度")
+        self.fails(doc(pkg("x", "1.0.0", "GHSA-r", None)), 1, "无法判定严重度")
+        for bad in (True, [], {}):
+            self.fails(doc(pkg("x", "1.0.0", "GHSA-r", bad)), 1, "不合法，按 10.0")
 
     def test_max_severity_number_ok(self):
         self.passes(doc(pkg("x", "1.0.0", "GHSA-s", 3.3)), 1)
 
     def test_v4_only_unscorable_fails(self):
         self.fails(doc(pkg("x", "1.0.0", "GHSA-t", ..., vuln_extra={
-            "severity": [{"type": "CVSS_V4", "score": V4}]})), 1, "无法判定严重度")
+            "severity": [{"type": "CVSS_V4", "score": V4}]})), 1, "不合法，按 10.0")
 
-    def test_v4_with_label_uses_label(self):
-        self.passes(doc(pkg("x", "1.0.0", "GHSA-u", ..., vuln_extra={
+    def test_v4_with_low_label_still_fails(self):
+        self.fails(doc(pkg("x", "1.0.0", "GHSA-u", ..., vuln_extra={
             "severity": [{"type": "CVSS_V4", "score": V4}],
-            "database_specific": {"severity": "LOW"}})), 1)
+            "database_specific": {"severity": "LOW"}})), 1, "不合法，按 10.0")
 
     def test_broken_vector_not_a_source(self):
         for bad in ("CVSS:3.1/AV:N", "CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-                    "CVSS:3.2/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "garbage", ""):
+                    "CVSS:3.2/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "garbage"):
             self.fails(doc(pkg("x", "1.0.0", "GHSA-v", ..., vuln_extra={
-                "severity": [{"type": "CVSS_V3", "score": bad}]})), 1, "无法判定严重度")
+                "severity": [{"type": "CVSS_V3", "score": bad}]})), 1, "不合法，按 10.0")
+        self.fails(doc(pkg("x", "1.0.0", "GHSA-v", ..., vuln_extra={
+            "severity": [{"type": "CVSS_V3", "score": ""}]})), 1, "无法判定严重度")
 
     def test_cvss_v2_vector(self):
         self.fails(doc(pkg("x", "1.0.0", "GHSA-w", ..., vuln_extra={
@@ -541,8 +572,10 @@ class PnpmAudit(Base):
         self.fails(audit({"1": adv("high")}), 1, "可在现有范围内升级", fmt="pnpm-audit")
 
     def test_severity_missing_or_bad(self):
-        for bad in (None, "", 7, "urgent"):
+        for bad in (None, ""):
             self.fails(audit({"1": adv(bad)}), 1, "无法判定严重度", fmt="pnpm-audit")
+        for bad in (7, "urgent"):
+            self.fails(audit({"1": adv(bad)}), 1, "不合法，按 10.0", fmt="pnpm-audit")
 
     def test_cvss_vector_beats_label(self):
         self.fails(audit({"1": adv("low", cvss={"score": 0, "vectorString": V98})}), 1,
@@ -655,7 +688,133 @@ class Cvss(unittest.TestCase):
         self.assertEqual(gate.score_vector("(AV:N/AC:M/Au:N/C:N/I:P/A:N)"), 4.3)
 
     def test_v4_not_scored(self):
-        self.assertIsNone(gate.score_vector(V4))
+        self.assertEqual(gate.score_vector(V4), 10.0)
+        self.assertIsInstance(gate.score_vector(V4), gate.Invalid)
+
+    def test_v30_roundup_integer_method(self):
+        # 3.0 与 3.1 用同一整数化写法；浮点误差不应让 4.000000000000001 进位
+        self.assertEqual(gate._roundup30(4.000000000000001), 4.0)
+        self.assertEqual(gate._roundup30(4.02), 4.1)
+        self.assertEqual(gate._roundup30(4.0), 4.0)
+
+
+# ---------------- 1.1.0：代码质量官阻塞 1/2、安全官 S1 ----------------
+
+class Unreferenced(Base):
+    def test_vuln_not_in_any_group_counts(self):  # 阻塞 1 反例
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        p["vulnerabilities"].append({"id": "GHSA-b", "severity": [
+            {"type": "CVSS_V3", "score": V98}]})
+        e = self.fails(doc(p), 1, "GHSA-b（未归组）")
+        self.assertTrue(any("严重度 9.8" in x for x in e), e)
+
+    def test_unreferenced_without_sources_is_high(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        p["vulnerabilities"].append({"id": "GHSA-b"})
+        self.fails(doc(p), 1, "无法判定严重度")
+
+    def test_unreferenced_low_warns(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        p["vulnerabilities"].append({"id": "GHSA-b", "severity": [
+            {"type": "CVSS_V3", "score": V53}]})
+        w = self.passes(doc(p), 1)
+        self.assertTrue(any("GHSA-b（未归组）" in x for x in w), w)
+
+    def test_alias_reference_counts_as_grouped(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        p["vulnerabilities"][0]["id"] = "CVE-2026-0001"
+        p["vulnerabilities"][0]["aliases"] = ["GHSA-a"]
+        w = self.passes(doc(p), 1)
+        self.assertFalse(any("未归组" in x for x in w), w)
+
+    def test_unreferenced_can_be_ignored(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        p["vulnerabilities"].append({"id": "GHSA-2v37-7h3g-55p8", "severity": [
+            {"type": "CVSS_V3", "score": V98}]})
+        self.passes(doc(p), 1, ignores=self.file("i.toml", GOOD))
+
+
+class OsvKeys(Base):
+    """osv-scanner 2.7.0 --all-packages 实测：没有漏洞的包 groups、vulnerabilities 都不出现。"""
+
+    def test_clean_package_has_neither_key(self):
+        self.passes(doc({"package": {"name": "ms", "version": "2.1.3", "ecosystem": "npm"}}), 0,
+                    require_packages=True)
+
+    def test_groups_without_vulnerabilities_key(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        del p["vulnerabilities"]
+        self.fails(doc(p), 1, "只有 groups")
+
+    def test_vulnerabilities_without_groups_key(self):
+        p = pkg("x", "1.0.0", "GHSA-a", "2")
+        del p["groups"]
+        self.fails(doc(p), 1, "只有 vulnerabilities")
+
+
+def entry(scope, added, until, extra=""):
+    sc = "" if scope is None else f"scope = {scope}\n"
+    return (f'[[IgnoredVulns]]\nid = "GHSA-2v37-7h3g-55p8"\n{sc}added = {added}\n'
+            f'ignoreUntil = {until}\nreason = "无修复版本"\n{extra}')
+
+
+class Scope(Base):
+    def test_scope_required(self):
+        e, _ = self.check(entry(None, "2026-10-21", "2026-10-30"))
+        self.assertTrue(any("缺少 scope" in x for x in e), e)
+
+    def test_scope_empty(self):
+        e, _ = self.check(entry('""', "2026-10-21", "2026-10-30"))
+        self.assertTrue(any("缺少 scope" in x for x in e), e)
+
+    def test_scope_bad_value(self):
+        for bad in ('"Prod"', '"production"', '"test"', "1", "true", '["prod"]'):
+            e, _ = self.check(entry(bad, "2026-10-21", "2026-10-30"))
+            self.assertTrue(any("scope 只能是" in x for x in e), (bad, e))
+
+    def test_prod_30_days_ok(self):
+        self.assertEqual(self.check(entry('"prod"', "2026-10-21", "2026-11-20"))[0], [])
+
+    def test_prod_31_days_fails(self):
+        e, _ = self.check(entry('"prod"', "2026-10-21", "2026-11-21"))
+        self.assertTrue(any("超过 30 天" in x for x in e), e)
+
+    def test_prod_60_days_fails(self):  # 安全官 S1 fixture
+        e, _ = self.check(entry('"prod"', "2026-10-01", "2026-11-30"))
+        self.assertTrue(any("超过 30 天（scope = prod）" in x for x in e), e)
+
+    def test_dev_90_ok_91_fails(self):
+        self.assertEqual(self.check(entry('"dev"', "2026-10-21", "2027-01-19"))[0], [])
+        e, _ = self.check(entry('"dev"', "2026-10-21", "2027-01-20"))
+        self.assertTrue(any("超过 90 天（scope = dev）" in x for x in e), e)
+
+    def test_effective_drops_scope(self):
+        e, entries = self.check(entry('"prod"', "2026-10-21", "2026-11-20"))
+        out = self.file("eff.toml", "")
+        gate.write_effective(entries, out)
+        text = pathlib.Path(out).read_text(encoding="utf-8")
+        self.assertNotIn("scope", text.split("\n", 1)[1])
+        self.assertNotIn("added", text.split("\n", 1)[1])
+
+    def test_bad_ignores_fail_results(self):
+        self.fails(doc(ESBUILD_LOW), 1, "超过 30 天",
+                   ignores=self.file("i.toml", entry('"prod"', "2026-10-01", "2026-11-30")))
+
+
+class NpmExtra(Base):
+    def test_cvss_score_zero_is_a_source(self):  # 建议 2
+        w = self.passes(npm({"x": npm_v(None, cvss={"score": 0, "vectorString": None})}), 1,
+                        fmt="npm-audit")
+        self.assertTrue(any("严重度 0.0" in x for x in w), w)
+
+    def test_cvss_score_negative_zero_is_10(self):
+        self.fails(npm({"x": npm_v("low", cvss={"score": -0.0, "vectorString": None})}), 1,
+                   "不合法，按 10.0", fmt="npm-audit")
+
+    def test_no_ghsa_says_unignorable(self):  # 建议 3
+        v = npm_v("high")
+        v["via"][0]["url"] = "https://npmjs.com/advisories/1"
+        self.fails(npm({"x": v}), 1, "无法登记忽略", fmt="npm-audit")
 
 
 if __name__ == "__main__":

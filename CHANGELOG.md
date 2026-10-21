@@ -93,6 +93,13 @@
 - vitest 与 @vitest/* 升到 4.1.12，修复 GHSA-82fw-gwwq-j7x9。
 - 漏洞门禁换成共享脚本 vuln-gate.py 1.0.0，CI 先校验哈希。
   - 严重度大小写不敏感，缺失时按 CVSS 向量算分，算不出按 High。
+- vuln-gate.py 升到 1.1.0。
+  - 忽略条目 scope 必填：prod 最长 30 天，dev 最长 90 天。
+  - 没被 group 引用的 osv 漏洞单独判定。
+  - 有值但不合法的分数（NaN、-0.0、v4 等）按 10.0 计。
+- 新增 gate audit：改了门禁文件、哈希或 uses: SHA 时 CI 变红。
+  - osv-scanner.toml 也受保护，增改忽略条目要安全官复核。
+- 新增 .github/CODEOWNERS（只作标注）和变异检查脚本。
 
 ### 发版流程
 
