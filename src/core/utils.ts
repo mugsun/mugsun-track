@@ -180,7 +180,18 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
  * 这些键在响应体里常是业务字段（如 {code:0}、{sign:true}），响应体里**不**替换，便于看接口错误、复现问题。
  */
 export const URL_ONLY_SENSITIVE_KEYS: ReadonlySet<string> = new Set(
-  ['code', 'sign', 'signature', 'ticket', 'otp'].map(normalizeKey)
+  [
+    'code',
+    'sign',
+    'signature',
+    'ticket',
+    'otp',
+    // 云存储预签名：Azure SAS、腾讯云 COS、阿里云 OSS
+    'sig',
+    'q-signature',
+    'x-oss-signature',
+    'x-oss-security-token'
+  ].map(normalizeKey)
 )
 
 const isSensitiveUrlKey = (key: string): boolean => {

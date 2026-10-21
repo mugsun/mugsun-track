@@ -4,7 +4,7 @@ import { isCredentialPath } from '../src/plugins/api-monitor'
 import { looksLikeToken, maskSensitiveBody } from '../src/plugins/api-monitor/uploader'
 import { redactSensitiveUrl } from '../src/core/utils'
 import { errorPlugin } from '../src/plugins/error'
-import { redactReplayUrls } from '../src/plugins/replay'
+import { redactReplayUrls, redactSrcset } from '../src/plugins/replay'
 import { allEvents, createTestClient, destroyAllClients } from './helpers'
 
 afterEach(() => destroyAllClients())
@@ -222,5 +222,73 @@ describe('响应体 code / ticket 值像令牌时也脱敏', () => {
   it('只对 code / ticket 生效：sign、msg 的长字符串保留', () => {
     const body = { sign: 'x'.repeat(40), msg: 'y'.repeat(40) }
     expect(JSON.parse(maskSensitiveBody(JSON.stringify(body), false))).toEqual(body)
+  })
+})
+
+describe('安全复核 9b93dda：P2 / P3', () => {
+  it('P2 像令牌：base64url（含 _ -）与 hex 令牌替换，大写下划线业务码保留', () => {
+    const b64 = 'Ab3_dE-9fGh1_jKl-2mNoPq3rStU_vW4xYz-5aBcDeF' // 43 字符
+    expect(b64.length).toBe(43)
+    const hex = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b'
+    for (const v of [b64, hex, 'a1b2c3d4e5f60718']) expect(looksLikeToken(v)).toBe(true)
+    for (const v of ['INVALID_PARAMETER_VALUE', 'ORDER_20261021_0001', 'E1001', 'USER_NOT_FOUND']) {
+      expect(looksLikeToken(v)).toBe(false)
+    }
+    // 已知漏判（P4）：纯数字 / 纯字母
+    expect(looksLikeToken('12345678901234567890')).toBe(false)
+    expect(looksLikeToken('abcdefghijklmnopqrst')).toBe(false)
+    expect(JSON.parse(maskSensitiveBody(JSON.stringify({ code: b64, ticket: hex }), false))).toEqual({
+      code: '***',
+      ticket: '***'
+    })
+  })
+
+  it.each(['/api/v1/login.json', '/login.do', '/login.action', '/login;jsessionid=x', '/oauth/token.json'])(
+    'P3-a 段右边界放宽：%s 命中',
+    (p) => expect(isCredentialPath(p)).toBe(true)
+  )
+  it.each(['/tokens/stats', '/loginLog.json', '/cascade.do'])('P3-a %s 仍不命中', (p) =>
+    expect(isCredentialPath(p)).toBe(false)
+  )
+
+  it.each(['/sendSms', '/getSmsCode', '/sendOtp', '/user/resendOtp', '/validateMobileCode', '/checkPhoneCode'])(
+    'P3-b 动词组合：%s 命中',
+    (p) => expect(isCredentialPath(p)).toBe(true)
+  )
+  it.each(['/smsTemplate/list', '/footprint/list', '/messageTemplate/send'])('P3-b %s 不命中', (p) =>
+    expect(isCredentialPath(p)).toBe(false)
+  )
+
+  it('P3-c srcset：data: 候选单独跳过，同属性里的签名 URL 照常替换', () => {
+    expect(redactSrcset('data:image/gif;base64,R0lGOD,lh 1x, https://c.example.com/a.jpg?token=t 2x')).toBe(
+      'data:image/gif;base64,R0lGOD,lh 1x, https://c.example.com/a.jpg?token=*** 2x'
+    )
+  })
+  it('P3-c srcset：URL 查询里带逗号不会被拆开', () => {
+    const out = redactSrcset('/img?size=1,2&sign=s 1x,/b.jpg 2x')
+    expect(out.endsWith(' 1x,/b.jpg 2x')).toBe(true)
+    expect(out).toContain('sign=***')
+    expect(out).not.toContain('sign=s ')
+    expect(new URLSearchParams(out.split('?')[1].split(' ')[0]).get('size')).toBe('1,2')
+  })
+  it('P3-c srcset：URL 末尾的逗号作分隔；中间无空白的逗号按规范属于 URL', () => {
+    expect(redactSrcset('/a.jpg?token=t, /b.jpg?token=u 2x')).toBe('/a.jpg?token=***, /b.jpg?token=*** 2x')
+    expect(redactSrcset('/a.jpg?token=t,, /b.jpg 2x')).toBe('/a.jpg?token=***,, /b.jpg 2x')
+    // 规范里整段 `/a.jpg?token=t,/b.jpg?token=u` 是一个 URL：token 值整体替换，不会漏出
+    expect(redactSrcset('/a.jpg?token=t,/b.jpg?token=u 2x')).toBe('/a.jpg?token=*** 2x')
+  })
+
+  it('P3-d 云存储签名参数（URL 专用）：Azure sig、COS q-signature、OSS x-oss-signature / x-oss-security-token', () => {
+    expect(redactSensitiveUrl('https://a.blob.core.windows.net/c/b?sv=2024&sig=abc&se=x')).toBe(
+      'https://a.blob.core.windows.net/c/b?sv=2024&sig=***&se=x'
+    )
+    expect(redactSensitiveUrl('https://b.cos.ap-shanghai.myqcloud.com/k?q-sign-algorithm=sha1&q-signature=abc')).toBe(
+      'https://b.cos.ap-shanghai.myqcloud.com/k?q-sign-algorithm=sha1&q-signature=***'
+    )
+    expect(
+      redactSensitiveUrl('https://b.oss-cn-hangzhou.aliyuncs.com/k?x-oss-signature=s&x-oss-security-token=t&x-oss-expires=1')
+    ).toBe('https://b.oss-cn-hangzhou.aliyuncs.com/k?x-oss-signature=***&x-oss-security-token=***&x-oss-expires=1')
+    // URL 专用：响应体里的 sig 保留
+    expect(JSON.parse(maskSensitiveBody(JSON.stringify({ sig: 'abc' }), false))).toEqual({ sig: 'abc' })
   })
 })

@@ -51,10 +51,17 @@ const CREDENTIAL_PATH_PARTS = [
 ]
 
 /**
- * 通用登录 / 登出 / 令牌 / 单点登录：按**整段**匹配（段两侧是 `/` 或首尾），
+ * 通用登录 / 登出 / 令牌 / 单点登录：按**整段**匹配（左侧是 `/` 或开头，右侧是 `/`、`.`、`;` 或结尾，
+ * 所以 /login.json、/login.do、/login;jsessionid=x 也算），
  * /api/login、/oauth2/token、/cas/login 命中；/monitor/loginLog、/tokens/stats、/cascade/tree、/case/list 不命中
  */
-const CREDENTIAL_SEGMENT_RE = /(^|\/)(login|signin|sign-in|logout|token|sso|cas)(\/|$)/i
+const CREDENTIAL_SEGMENT_RE = /(^|\/)(login|signin|sign-in|logout|token|sso|cas)([/.;]|$)/i
+
+/**
+ * 动词 + 短信/验证码的组合（路径小写后子串匹配）：/sendSms、/getSmsCode、/sendOtp、/resendOtp、/validateMobileCode。
+ * /smsTemplate 前面没有动词，不命中
+ */
+const CREDENTIAL_COMBO_RE = /(send|get|resend|check|verify|validate)(sms|otp|smscode|mobilecode|phonecode)/
 
 /** 子串匹配（够长、几乎不会误伤）：/getCaptcha、/user/verifyCode、/api/verificationCodeCheck 都命中 */
 const CREDENTIAL_PATH_SUBSTRINGS = ['captcha', 'verifycode', 'verificationcode']
@@ -63,7 +70,7 @@ const CREDENTIAL_PATH_SUBSTRINGS = ['captcha', 'verifycode', 'verificationcode']
  * 按「词」匹配：路径小写后按非字母字符（`/`、`-`、`_`、`.`、数字）切词，某个词恰好等于下列之一才算。
  * /api/sms/send、/sms-send、/send_otp、/user/getcode、/sms/sendCode（含 sms 词）命中；
  * /smsTemplate、/footprint、/barcode/getcodeList 不命中。驼峰拼在一起的 /sendSms、/sendOtp 也不命中
- * （小写后无法区分 smsTemplate 与 sendSms），属已知漏判。
+ * （这类由下面的动词组合规则覆盖）。
  */
 const CREDENTIAL_WORDS = new Set(['sms', 'otp', 'sendcode', 'getcode', 'checkcode'])
 
@@ -73,6 +80,7 @@ export function isCredentialPath(pathname: string): boolean {
   return (
     CREDENTIAL_PATH_PARTS.some((part) => p.includes(part)) ||
     CREDENTIAL_SEGMENT_RE.test(p) ||
+    CREDENTIAL_COMBO_RE.test(p) ||
     CREDENTIAL_PATH_SUBSTRINGS.some((part) => p.includes(part)) ||
     p.split(/[^a-z]+/).some((w) => CREDENTIAL_WORDS.has(w))
   )

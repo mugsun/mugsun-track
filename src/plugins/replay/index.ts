@@ -80,16 +80,44 @@ const URL_ATTRS = new Set(['href', 'src', 'action', 'xlink:href', 'formaction', 
 /** 候选列表属性：`url 1x, url2 2x` 形式，逐个候选脱敏 URL、保留描述符 */
 const SRCSET_ATTRS = new Set(['srcset', 'imagesrcset'])
 
-function redactSrcset(v: string): string {
-  // data: URL 本身含逗号，无法按逗号切分；data: 也不带查询参数，原样保留
-  if (/(^|,)\s*data:/i.test(v)) return v
-  return v
-    .split(',')
-    .map((cand) => {
-      const m = /^(\s*)(\S+)(.*)$/s.exec(cand)
-      return m ? m[1] + redactSensitiveUrl(m[2]) + m[3] : cand
-    })
-    .join(',')
+/**
+ * 按 HTML 规范的 srcset 候选解析（parse a srcset attribute）：跳过空白与逗号 → 取一段非空白作为 URL
+ * （URL 里可以有逗号；末尾的逗号不属于 URL）→ 描述符读到括号外的逗号为止。
+ * 只替换每个候选的 URL 部分，其余字符（空白、描述符、逗号）原样保留；data: 候选单独跳过，其他候选照常脱敏
+ */
+export function redactSrcset(v: string): string {
+  let out = ''
+  let i = 0
+  const n = v.length
+  const isWs = (c: string) => c === ' ' || c === '\t' || c === '\n' || c === '\f' || c === '\r'
+  while (i < n) {
+    let j = i
+    while (j < n && (isWs(v[j]) || v[j] === ',')) j++
+    out += v.slice(i, j)
+    if (j >= n) break
+    let k = j
+    while (k < n && !isWs(v[k])) k++
+    let url = v.slice(j, k)
+    let trailing = ''
+    let descEnd = k
+    if (url.endsWith(',')) {
+      const stripped = url.replace(/,+$/, '')
+      trailing = url.slice(stripped.length)
+      url = stripped
+    } else {
+      let depth = 0
+      while (descEnd < n) {
+        const c = v[descEnd]
+        if (c === '(') depth++
+        else if (c === ')') depth = Math.max(0, depth - 1)
+        else if (c === ',' && depth === 0) break
+        descEnd++
+      }
+    }
+    out += (/^data:/i.test(url) ? url : redactSensitiveUrl(url)) + trailing + v.slice(k, descEnd)
+    i = descEnd
+  }
+  return out
 }
 
 function redactAttrs(attrs: unknown): void {
