@@ -8,6 +8,9 @@
    顶层或其他 job 出现 id-token、write-all 即失败。
 4. uses: 必须钉 40 位 commit SHA，后面注释版本（# vX）；本地 ./ 和
    docker://...@sha256: 除外。
+5. 有 push 触发的 workflow 必须有顶层 concurrency（清单 3.16：分支推送多，旧运行要取消）。
+6. 有 issues: write 的 job，if 里必须带 github.ref == 'refs/heads/main'
+   （只在 main 上开 issue，功能分支失败不开）。
 
 不依赖 PyYAML：按缩进解析，只认本仓 workflow 用到的写法。
 用法：check-workflows.py [workflow 目录]，默认 .github/workflows。
@@ -62,6 +65,8 @@ def check(path):
 
     top_perm = None
     jobs_line = None
+    on_line = None
+    has_concurrency = False
     for i, raw in enumerate(lines):
         s = strip_comment(raw)
         if not s.strip():
@@ -72,6 +77,10 @@ def check(path):
                 top_perm = (i, perm_map(lines, i, 0))
             elif key == "jobs":
                 jobs_line = i
+            elif key in ("on", '"on"', "'on'"):
+                on_line = i
+            elif key == "concurrency":
+                has_concurrency = True
         if re.search(r"\bpull_request_target\b", s):
             err(i, "禁止 pull_request_target 触发")
         m = USES_RE.match(s if "#" not in raw else raw)
@@ -94,6 +103,13 @@ def check(path):
     elif top_perm[1] != {"contents": "read"}:
         err(top_perm[0], f"顶层 permissions 只能是 contents: read，现在是 {top_perm[1]}")
 
+    if on_line is not None:
+        events = {s.strip().split(":", 1)[0] for _, s in block(lines, on_line, 0)
+                  if indent(s) == 2}
+        head = strip_comment(lines[on_line]).split(":", 1)[1]
+        if ("push" in events or re.search(r"\bpush\b", head)) and not has_concurrency:
+            err(on_line, "有 push 触发但缺少顶层 concurrency")
+
     if jobs_line is not None:
         job_rows = [(i, s) for i, s in block(lines, jobs_line, 0)]
         job_indent = min((indent(s) for _, s in job_rows), default=2)
@@ -108,6 +124,11 @@ def check(path):
                 if isinstance(p, dict) and "id-token" in p and "environment" not in keys:
                     err(keys["permissions"],
                         f"job {name} 有 id-token 权限但没挂 environment（只有发布 job 可以）")
+                if isinstance(p, dict) and p.get("issues") == "write":
+                    cond = strip_comment(lines[keys["if"]]) if "if" in keys else ""
+                    if "github.ref == 'refs/heads/main'" not in cond:
+                        err(keys["permissions"],
+                            f"job {name} 有 issues: write，if 里必须限定 github.ref == 'refs/heads/main'")
     return errs
 
 

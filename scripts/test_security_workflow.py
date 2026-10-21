@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """track 仓专用：security.yml 的审查要求（代码质量官 9cf50f1 复核、清单 3.13）。
 共享门禁本身的测试在 test_vuln_gate.py（共享文件）。"""
+import importlib.util
 import pathlib
+import tempfile
 import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+_spec = importlib.util.spec_from_file_location(
+    "check_workflows", ROOT / "scripts/check-workflows.py")
+check_workflows = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(check_workflows)
 
 
 class SecurityWorkflow(unittest.TestCase):
@@ -11,7 +19,8 @@ class SecurityWorkflow(unittest.TestCase):
             / ".github/workflows/security.yml").read_text(encoding="utf-8")
 
     def test_notify_on_failure_or_cancelled(self):
-        self.assertIn("if: (failure() || cancelled()) && github.event_name == 'schedule'", self.text)
+        self.assertIn("if: (failure() || cancelled()) && github.event_name == 'schedule' "
+                      "&& github.ref == 'refs/heads/main'", self.text)
 
     def test_every_checkout_drops_credentials(self):
         blocks = self.text.split("uses: actions/checkout@")[1:]
@@ -69,7 +78,8 @@ class SecurityWorkflow(unittest.TestCase):
     def test_gate_audit_failure_opens_issue(self):  # 安全官 G1-3
         job = self.text.split("\n  gate-audit-notify:")[1].split("\n  # 清单 3.2")[0]
         self.assertIn("needs: [gate-audit]", job)
-        self.assertIn("if: failure() && github.event_name == 'push'", job)
+        self.assertIn("if: failure() && github.event_name == 'push' "
+                      "&& github.ref == 'refs/heads/main'", job)
         perms = job.split("permissions:")[1].split("steps:")[0].split()
         self.assertEqual(perms, ["issues:", "write"])
         self.assertNotIn("actions/checkout", job)
@@ -87,6 +97,82 @@ class SecurityWorkflow(unittest.TestCase):
                     "/.github/workflows/", "/.gitleaks.toml", "/.gitleaksignore",
                     "/.github/CODEOWNERS"):
             self.assertIn(f"{pat} @mugsun", co)
+
+    def test_branch_push_uses_merge_base_with_main(self):  # 清单 3.16
+        job = self.gate_audit_job()
+        branch = job.index('if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then')
+        mb = job.index("BASE_SHA=$(git merge-base origin/main HEAD)")
+        zero = job.index('*) echo "::error::base 全 0')
+        self.assertLess(branch, mb)
+        self.assertLess(mb, zero)  # 先换成 merge-base，再走 A2 的全 0 / 不可达检查
+        self.assertIn("算不出和 origin/main 的 merge-base", job[mb:zero])
+        self.assertIn("exit 1", job[mb:zero])
+        self.assertIn("REF: ${{ github.ref }}", job)
+
+
+class Triggers(unittest.TestCase):
+    """清单 3.16：分支先绿再进 main。ci.yml 和 security.yml 推任意分支都跑。"""
+
+    def wf(self, name):
+        return (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+
+    def test_push_any_branch_pr_and_dispatch(self):
+        for name in ("ci.yml", "security.yml"):
+            on = self.wf(name).split("\non:\n")[1].split("\n\n")[0]
+            with self.subTest(name=name):
+                self.assertIn("  push:\n    branches: ['**']", on)
+                self.assertIn("  pull_request:\n    branches: [main]", on)
+                self.assertIn("  workflow_dispatch:", on)
+
+    def test_concurrency_cancels_old_runs_except_main(self):
+        for name in ("ci.yml", "security.yml"):
+            with self.subTest(name=name):
+                t = self.wf(name)
+                self.assertIn("\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}"
+                              "-${{ github.ref }}\n  cancel-in-progress: ${{ github.ref != "
+                              "'refs/heads/main' }}", t)
+
+    def test_release_still_main_only(self):
+        t = self.wf("release.yml")
+        self.assertIn("  push:\n    branches: [main]\n    paths: [package.json]", t)
+
+    def test_changelog_branch_push_uses_merge_base(self):
+        job = self.wf("ci.yml").split("\n  changelog:")[1].split("\n  build:")[0]
+        self.assertIn("fetch-depth: 0", job)
+        self.assertIn("BASE=$(git merge-base origin/main HEAD)", job)
+        self.assertIn('[ "$REF" != refs/heads/main ]', job)
+
+
+class CheckWorkflows(unittest.TestCase):
+    """check-workflows.py 的规则 5、6（清单 3.16）。"""
+    BASE = ("name: x\non:\n  push:\n    branches: ['**']\npermissions:\n  contents: read\n"
+            "{conc}jobs:\n  n:\n    {cond}runs-on: ubuntu-latest\n    permissions:\n"
+            "      issues: write\n    steps:\n      - run: true\n")
+    CONC = "concurrency:\n  group: g\n"
+    MAIN = "if: failure() && github.ref == 'refs/heads/main'\n    "
+
+    def errs(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "w.yml"
+            f.write_text(text, encoding="utf-8")
+            return check_workflows.check(f)
+
+    def test_ok(self):
+        self.assertEqual(self.errs(self.BASE.format(conc=self.CONC, cond=self.MAIN)), [])
+
+    def test_push_without_concurrency(self):
+        e = self.errs(self.BASE.format(conc="", cond=self.MAIN))
+        self.assertTrue(any("缺少顶层 concurrency" in x for x in e), e)
+
+    def test_issues_write_without_main_guard(self):
+        for cond in ("", "if: failure()\n    "):
+            e = self.errs(self.BASE.format(conc=self.CONC, cond=cond))
+            self.assertTrue(any("refs/heads/main" in x for x in e), (cond, e))
+
+    def test_repo_workflows_pass(self):
+        for f in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            with self.subTest(f=f.name):
+                self.assertEqual(check_workflows.check(f), [])
 
 
 if __name__ == "__main__":

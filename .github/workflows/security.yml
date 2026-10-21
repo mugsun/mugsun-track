@@ -1,15 +1,20 @@
 name: Security scan
 
-# 清单 3.1、3.7、3.10：osv-scanner + pnpm audit，push/PR 时跑，每天定时再跑一次；
+# 清单 3.1、3.7、3.10、3.16：osv-scanner + pnpm audit，推任意分支、PR 时跑，每天定时再跑一次；
 # 定时任务失败自动开 issue（已有未关 issue 时只追加评论）
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
   schedule:
     - cron: '17 1 * * *' # 每天 09:17（北京时间）
   workflow_dispatch:
+
+# 同一分支有新推送时取消旧运行；main 上不取消，每次推送都要完整跑完（gate audit 逐次比对 before）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -98,7 +103,8 @@ jobs:
             --ignores osv-scanner.toml --require-packages audit.json
 
   # 清单 3.15、安全官 S2 / F1 / G1、代码质量官 A1 / A2：门禁文件变更审计，只在 push / PR 上跑。
-  # push 比 github.event.before，PR 比 merge-base(base, HEAD)。.github/workflows/** 任何改动、
+  # main 上的 push 比 github.event.before；功能分支 push 比 merge-base(origin/main, HEAD)
+  # （分支首推 before 全 0）；PR 比 merge-base(base, HEAD)。.github/workflows/** 任何改动、
   # 共享脚本或哈希、osv / gitleaks 配置等受保护文件有改动就变红，交安全官复核。
   # base 为空、全 0 或不可达时直接失败，不交给本次提交里的脚本判断；
   # 只有 base 存在但还没有 gate-audit.py（首次引入）时才用本次的脚本，并且同样判红。
@@ -118,8 +124,17 @@ jobs:
       - name: Audit gate changes
         env:
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
+          # 功能分支 push（清单 3.16）：不用 before，改和 origin/main 的 merge-base 比；
+          # 算不出来（没有共同祖先、origin/main 不存在）就判红。main 和 PR 的规则不变。
+          if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then
+            if ! BASE_SHA=$(git merge-base origin/main HEAD); then
+              echo "::error::算不出和 origin/main 的 merge-base，无法审计门禁改动"
+              exit 1
+            fi
+          fi
           case "$BASE_SHA" in
             "" | *[!0]*) ;;
             *) echo "::error::base 全 0（新分支首推或 tag 推送），无法审计门禁改动"; exit 1 ;;
@@ -145,11 +160,12 @@ jobs:
           if [ "$first" -eq 1 ]; then exit 1; fi
           exit "$rc"
 
-  # gate audit 在 push 上失败时开 issue（安全官 G1-3）：直推 main 时审计只是事后告警，要有人看到
+  # gate audit 在 main 的 push 上失败时开 issue（安全官 G1-3）：功能分支上动了 workflow
+  # 判红是预期的，不开 issue
   gate-audit-notify:
     name: Open issue on gate audit failure
     needs: [gate-audit]
-    if: failure() && github.event_name == 'push'
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -200,7 +216,7 @@ jobs:
   notify:
     name: Open issue on scheduled failure
     needs: [osv, audit, gitleaks]
-    if: (failure() || cancelled()) && github.event_name == 'schedule'
+    if: (failure() || cancelled()) && github.event_name == 'schedule' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

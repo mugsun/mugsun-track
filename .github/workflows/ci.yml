@@ -1,10 +1,17 @@
 name: CI
 
+# 清单 3.16：分支先绿再进 main，所以推任意分支都跑；pull_request 保留（gate-audit 也锁了这一条）
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+# 同一分支有新推送时取消旧运行；main 上不取消，每次推送都要完整跑完（gate audit 逐次比对 before）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -35,8 +42,15 @@ jobs:
 
       - name: Check CHANGELOG
         env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-        run: python3 scripts/check-changelog.py "$BASE"
+        run: |
+          # 功能分支推送和手动触发：和 origin/main 的 merge-base 比（首推时 before 全 0）
+          if [ "$EVENT" = workflow_dispatch ] || { [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; }; then
+            BASE=$(git merge-base origin/main HEAD)
+          fi
+          python3 scripts/check-changelog.py "$BASE"
 
   build:
     name: Typecheck / Test / Build
