@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install osv-scanner (pinned, sha256 verified)
         run: |
@@ -64,6 +66,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -71,16 +75,16 @@ jobs:
       # 只读 lockfile 查询 advisories，不装依赖、不跑安装脚本
       - run: pnpm audit --audit-level=high
 
-  # 清单 3.2、3.6：密钥扫描，PR 和 push 时跑；fetch-depth: 0 拿全历史
+  # 清单 3.2、3.6：密钥扫描，push、PR 和每日定时都跑；fetch-depth: 0 拿全历史
   gitleaks:
     name: gitleaks
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Install gitleaks (pinned, sha256 verified)
         run: |
@@ -97,7 +101,7 @@ jobs:
   notify:
     name: Open issue on scheduled failure
     needs: [osv, audit, gitleaks]
-    if: failure() && github.event_name == 'schedule'
+    if: (failure() || cancelled()) && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -118,6 +122,6 @@ jobs:
           else
             gh issue create --title "$title" --body "$body
           
-          osv-scanner 或 pnpm audit 发现需要处理的漏洞（或工具本身出错），详见运行日志。
+          osv-scanner、pnpm audit 或 gitleaks 发现需要处理的问题（或工具本身出错），详见运行日志。
           同一问题再次失败时只在本 issue 追加评论。"
           fi

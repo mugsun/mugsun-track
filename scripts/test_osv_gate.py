@@ -154,7 +154,7 @@ class Config(unittest.TestCase):
         gate.write_effective(entries, out)
         text = pathlib.Path(out).read_text(encoding="utf-8")
         self.assertNotIn("added", text.replace("去掉 added", ""))
-        self.assertIn("ignoreUntil = 2027-01-19T00:00:00Z", text)
+        self.assertIn("ignoreUntil = 2027-01-19T23:59:59Z", text)
 
     # 4. added 必填，90 天从 added 算
     def test_missing_added(self):
@@ -175,6 +175,45 @@ class Config(unittest.TestCase):
         e, _ = self.check(self.GOOD.replace("added = 2026-10-21", "added = 2026-08-01")
                           .replace("2027-01-19", "2026-10-20"))
         self.assertTrue(any("过期" in x for x in e))
+
+    # 到期按 UTC 日期：ignoreUntil 当天仍有效（23:59:59Z），前一天即过期
+    def test_until_today_still_valid(self):
+        e, _ = self.check(self.GOOD.replace("added = 2026-10-21", "added = 2026-08-01")
+                          .replace("2027-01-19", "2026-10-21"))
+        self.assertEqual(e, [])
+
+    def test_until_yesterday_expired_utc_wording(self):
+        e, _ = self.check(self.GOOD.replace("added = 2026-10-21", "added = 2026-08-01")
+                          .replace("2027-01-19", "2026-10-20"))
+        self.assertTrue(any("23:59:59Z（UTC）过期" in x for x in e))
+
+    def test_default_today_is_utc(self):
+        import datetime as _dt
+        real = gate.dt.datetime
+
+        class Fake(real):
+            @classmethod
+            def now(cls, tz=None):
+                # 北京时间 2026-10-22 07:00 = UTC 2026-10-21 23:00
+                return real(2026, 10, 21, 23, 0, tzinfo=_dt.timezone.utc).astimezone(tz)
+        gate.dt.datetime = Fake
+        try:
+            path = self.t.file("u.toml", self.GOOD.replace("added = 2026-10-21", "added = 2026-08-01")
+                               .replace("2027-01-19", "2026-10-21"))
+            e, _ = gate.check_config(path)
+        finally:
+            gate.dt.datetime = real
+        self.assertEqual(e, [])
+
+    # 条目不是表：友好报错，不抛异常
+    def test_entry_not_table(self):
+        e, _ = self.check('IgnoredVulns = ["GHSA-x", 1]\n')
+        self.assertEqual(len(e), 2)
+        self.assertTrue(all("不是表" in x for x in e))
+
+    def test_ignoredvulns_not_array(self):
+        e, _ = self.check('IgnoredVulns = "GHSA-x"\n')
+        self.assertIn("数组", e[0])
 
     def test_missing_reason(self):
         e, _ = self.check(self.GOOD.replace('reason = "无修复版本"\n', ""))
@@ -200,6 +239,28 @@ class Config(unittest.TestCase):
     def test_unknown_key(self):
         e, _ = self.check(self.GOOD + 'severity = "low"\n')
         self.assertTrue(any("不认识的键" in x for x in e))
+
+
+class SecurityWorkflow(unittest.TestCase):
+    """security.yml 的审查要求（代码质量官 9cf50f1 复核）。"""
+    text = (pathlib.Path(__file__).resolve().parent.parent
+            / ".github/workflows/security.yml").read_text(encoding="utf-8")
+
+    def test_notify_on_failure_or_cancelled(self):
+        self.assertIn("if: (failure() || cancelled()) && github.event_name == 'schedule'", self.text)
+
+    def test_every_checkout_drops_credentials(self):
+        blocks = self.text.split("uses: actions/checkout@")[1:]
+        self.assertGreaterEqual(len(blocks), 3)
+        for b in blocks:
+            head = b.split("\n      - ")[0]
+            self.assertIn("persist-credentials: false", head)
+
+    def test_gitleaks_runs_on_schedule_and_is_notified(self):
+        job = self.text.split("\n  gitleaks:")[1].split("\n  notify:")[0]
+        self.assertNotIn("\n    if:", job)
+        self.assertIn("needs: [osv, audit, gitleaks]", self.text)
+        self.assertIn("gitleaks 发现", self.text)
 
 
 if __name__ == "__main__":

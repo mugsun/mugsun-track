@@ -6,6 +6,8 @@
    osv-scanner.toml 每条 [[IgnoredVulns]] 必须有：
      id、reason、added（登记日期）、ignoreUntil（不早于今天，且不超过 added 起 90 天）
    日期要写 TOML 原生日期（不加引号）；写成字符串或格式不对，给出明确报错。
+   日期一律按 UTC 计算：ignoreUntil 当天 23:59:59Z 前有效，次日 00:00Z 起视为过期；
+   「今天」也取 UTC 日期（北京时间 08:00 前仍算前一天）。
    osv-scanner 不认 added 这个键（会报 unknown keys），所以输出一份去掉 added 的
    等价配置给 --config 用；忽略的条目和期限与 osv-scanner.toml 完全一致。
 
@@ -50,7 +52,7 @@ def to_date(value, field, vid):
 
 def check_config(path, today=None):
     """返回 (errors, entries)。entries 用于生成 effective 配置。"""
-    today = today or dt.date.today()
+    today = today or dt.datetime.now(dt.timezone.utc).date()  # 按 UTC 日期
     p = pathlib.Path(path)
     if not p.exists():
         return [f"{p}: 文件不存在"], []
@@ -66,6 +68,10 @@ def check_config(path, today=None):
     if not isinstance(items, list):
         return errs + [f"{p}: IgnoredVulns 必须写成 [[IgnoredVulns]] 数组"], []
     for n, item in enumerate(items, 1):
+        if not isinstance(item, dict):
+            errs.append(f"{p}: 第 {n} 条 IgnoredVulns 不是表（{type(item).__name__}），"
+                        "应写成 [[IgnoredVulns]] 加 id = ... 等键")
+            continue
         vid = str(item.get("id") or f"第 {n} 条")
         missing = [k for k in REQUIRED if k not in item or item[k] in ("", None)]
         if missing:
@@ -85,8 +91,8 @@ def check_config(path, today=None):
             continue
         if added > today:
             errs.append(f"{p}: {vid} added {added} 晚于今天")
-        if until < today:
-            errs.append(f"{p}: {vid} 已于 {until} 过期")
+        if until < today:  # until 当天 23:59:59Z 仍有效
+            errs.append(f"{p}: {vid} 已于 {until} 23:59:59Z（UTC）过期")
         if until < added:
             errs.append(f"{p}: {vid} ignoreUntil {until} 早于 added {added}")
         elif (until - added).days > MAX_IGNORE_DAYS:
@@ -101,7 +107,7 @@ def write_effective(entries, out):
     for e in entries:
         lines += ["[[IgnoredVulns]]",
                   f"id = {json.dumps(e['id'])}",
-                  f"ignoreUntil = {e['until'].isoformat()}T00:00:00Z",
+                  f"ignoreUntil = {e['until'].isoformat()}T23:59:59Z",  # 与上面的到期判断一致，按 UTC
                   f"reason = {json.dumps(e['reason'], ensure_ascii=False)}", ""]
     pathlib.Path(out).write_text("\n".join(lines), encoding="utf-8")
 
