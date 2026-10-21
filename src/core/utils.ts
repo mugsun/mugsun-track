@@ -239,28 +239,32 @@ export function normalizeEndpoint(endpoint: string): string {
 }
 
 export function redactSensitiveUrl(url: string): string {
+  // 只改查询串和 hash，其余部分（协议、主机、相对路径、// 协议相对前缀）逐字保留，不经 URL 解析归一
+  if (typeof url !== 'string' || !url) return url
+  const hashAt = url.indexOf('#')
+  const beforeHash = hashAt >= 0 ? url.slice(0, hashAt) : url
+  const hashPart = hashAt >= 0 ? url.slice(hashAt) : ''
+  const qAt = beforeHash.indexOf('?')
+  const base = qAt >= 0 ? beforeHash.slice(0, qAt) : beforeHash
+  let query = qAt >= 0 ? beforeHash.slice(qAt + 1) : null
+  let hash = hashPart
+  let changed = false
   try {
-    const u = new URL(url, 'https://placeholder.invalid')
-    let changed = false
-    const keys = Array.from(new Set(u.searchParams.keys()))
-    for (const key of keys) {
-      if (isSensitiveUrlKey(key)) {
-        u.searchParams.set(key, '***')
+    if (query) {
+      const r = redactParamString(query)
+      if (r !== null) {
+        query = r
         changed = true
       }
     }
-    const hash = redactHash(u.hash)
-    if (hash !== null) {
-      u.hash = hash
+    const h = redactHash(hashPart)
+    if (h !== null) {
+      hash = h
       changed = true
     }
-    if (!changed) return url
-    // 相对 URL 输入时保留相对形态（去掉占位 origin）
-    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) {
-      return `${u.pathname}${u.search}${u.hash}`
-    }
-    return u.href
   } catch {
     return url
   }
+  if (!changed) return url
+  return `${base}${query !== null ? `?${query}` : ''}${hash}`
 }

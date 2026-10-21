@@ -323,3 +323,25 @@ describe('安全复核 8aac4b8：N-1 ~ N-3、srcset 逗号', () => {
     expect(out).toBe(`/a.jpg?token=***${commas} /b.jpg 2x`)
   })
 })
+
+describe('r5', () => {
+  it.each(['/getToken', '/api/refreshToken', '/renewAccessToken', '/getAccessToken'])('(a) %s 命中', (p) =>
+    expect(isCredentialPath(p)).toBe(true)
+  )
+  it('(b) srcset 括号描述符里的逗号不拆候选', () => {
+    expect(redactSrcset('a.jpg?token=1 1x, b.jpg?token=2 (x,y) 2x')).toBe('a.jpg?token=*** 1x, b.jpg?token=*** (x,y) 2x')
+  })
+  it('(c) 只改查询串与 hash，相对与协议相对 URL 逐字保留', () => {
+    expect(redactSensitiveUrl('img/a.jpg?token=t&w=1')).toBe('img/a.jpg?token=***&w=1')
+    expect(redactSensitiveUrl('img/a.jpg')).toBe('img/a.jpg')
+    expect(redactSensitiveUrl('//cdn.x/a?token=t')).toBe('//cdn.x/a?token=***')
+    expect(redactSensitiveUrl('../p/q?sign=s#frag')).toBe('../p/q?sign=***#frag')
+    expect(redactSensitiveUrl('HTTPS://Ex.COM/A?token=t')).toBe('HTTPS://Ex.COM/A?token=***')
+    expect(redactSensitiveUrl('/cb#access_token=a&state=x')).toBe('/cb#access_token=***&state=x')
+  })
+  it('(d) URL 编码的令牌（含 %）也替换', () => {
+    const v = '4%2F0AbCdEfGhIjKlMnOpQrStUv123'
+    expect(looksLikeToken(v)).toBe(true)
+    expect(JSON.parse(maskSensitiveBody(JSON.stringify({ code: v }), false))).toEqual({ code: '***' })
+  })
+})
