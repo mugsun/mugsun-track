@@ -75,6 +75,55 @@ function redactMetaHref<T>(event: T): T {
   return event
 }
 
+/** 回放 DOM 里需要按 URL 敏感参数脱敏的属性 */
+const URL_ATTRS = new Set(['href', 'src', 'action', 'xlink:href', 'formaction', 'poster', 'data'])
+
+function redactAttrs(attrs: unknown): void {
+  if (!attrs || typeof attrs !== 'object') return
+  const a = attrs as Record<string, unknown>
+  for (const name of Object.keys(a)) {
+    const v = a[name]
+    if (typeof v === 'string' && v && URL_ATTRS.has(name.toLowerCase())) {
+      const r = redactSensitiveUrl(v)
+      if (r !== v) a[name] = r
+    }
+  }
+}
+
+function redactNodeTree(node: unknown, depth = 0): void {
+  // 迭代深度兜底：极深 DOM 不爆栈（rrweb 快照本身也是递归结构）
+  if (!node || typeof node !== 'object' || depth > 2000) return
+  const n = node as { attributes?: unknown; childNodes?: unknown[] }
+  redactAttrs(n.attributes)
+  if (Array.isArray(n.childNodes)) for (const c of n.childNodes) redactNodeTree(c, depth + 1)
+}
+
+/**
+ * 回放 DOM 快照里的 URL 属性（a[href]、img/iframe/script[src]、form[action] 等）脱敏。
+ * rrweb 2.1.1 的 record 没有属性级钩子（maskAttributeFn 只在 Sentry 分叉里有），
+ * 所以在 emit 时处理：全量快照（type 2）遍历节点树；增量快照（type 3）的 DOM 变更
+ * （source 0）处理新增节点与属性变更。原地改写 rrweb 刚产出的事件对象
+ */
+export function redactReplayUrls<T>(event: T): T {
+  const e = event as {
+    type?: unknown
+    data?: {
+      source?: unknown
+      node?: unknown
+      adds?: Array<{ node?: unknown }>
+      attributes?: Array<{ attributes?: unknown }>
+    }
+  }
+  if (!e || !e.data) return event
+  if (e.type === 2) {
+    redactNodeTree(e.data.node)
+  } else if (e.type === 3 && e.data.source === 0) {
+    if (Array.isArray(e.data.adds)) for (const a of e.data.adds) redactNodeTree(a?.node)
+    if (Array.isArray(e.data.attributes)) for (const a of e.data.attributes) redactAttrs(a?.attributes)
+  }
+  return event
+}
+
 /** 默认每 3 分钟一次全量快照（rrweb checkoutEveryNms） */
 export const DEFAULT_CHECKOUT_EVERY_MS = 3 * 60 * 1000
 
@@ -188,7 +237,7 @@ export function replayPlugin(pluginOpts: ReplayPluginOptions = {}): TrackPlugin 
           }
           if (destroyed) return
           stopRecord = record({
-            emit: (event) => recorder.push(redactMetaHref(event)),
+            emit: (event) => recorder.push(redactReplayUrls(redactMetaHref(event))),
             // 输入值与页面文本默认录原文（maskAllInputs / maskTextSelector 由接入方开启）；
             // password 另经 maskInputOptions 兜底；password、data-track-mask、cc-*、one-time-code
             // 与 maskSelectors（本地 + 远端下发合并）整块不录；不采 canvas

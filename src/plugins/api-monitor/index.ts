@@ -49,8 +49,31 @@ const CREDENTIAL_PATH_PARTS = [
   '/2fa',
   '/totp',
   '/verify-code',
-  '/verification-code'
+  '/verification-code',
+  // 通用登录 / 登出 / 令牌 / 单点登录（含 /api/login、/oauth2/token、/cas/serviceValidate 等）
+  '/login',
+  '/signin',
+  '/sign-in',
+  '/logout',
+  '/token',
+  '/sso',
+  '/cas'
 ]
+
+/**
+ * 不要求 `/` 前缀的子串（路径小写后匹配）：覆盖驼峰或无斜杠写法，如 /sendSms、/user/smsCode、
+ * /getCaptcha、/verifyCode、/sms/sendCode。可能误伤（如 /hotpot），代价只是少采一个响应体
+ */
+const CREDENTIAL_PATH_SUBSTRINGS = ['sms', 'captcha', 'otp', 'verifycode', 'verificationcode']
+
+/** 凭证端点判定（导出供测试）：pathname 小写后按片段与子串匹配 */
+export function isCredentialPath(pathname: string): boolean {
+  const p = pathname.toLowerCase()
+  return (
+    CREDENTIAL_PATH_PARTS.some((part) => p.includes(part)) ||
+    CREDENTIAL_PATH_SUBSTRINGS.some((part) => p.includes(part))
+  )
+}
 
 /** body 安全阀缺省 1MB（远端 apiBodyMaxBytes 可调） */
 const DEFAULT_BODY_MAX_BYTES = 1024 * 1024
@@ -160,8 +183,7 @@ export function apiMonitorPlugin(pluginOpts: ApiMonitorPluginOptions = {}): Trac
         contentType: string,
         contentLength: number | null
       ): BodyAction => {
-        const lowerPath = info.pathname.toLowerCase()
-        if (CREDENTIAL_PATH_PARTS.some((p) => lowerPath.includes(p))) return 'credential'
+        if (isCredentialPath(info.pathname)) return 'credential'
         // SSE/二进制/非 JSON 统一在此闸口拦截（不 clone 读体，避免整响应入内存双份）
         if (!contentType.includes('json')) return 'skip'
         if (contentLength !== null && contentLength > maxBytes) return 'size'

@@ -66,6 +66,19 @@ const PERSONAL_KEYS = new Set(
 /** 递归深度上限：防环/防病态嵌套打爆栈；超过上限的子树整体替换为 ***（不原样放过） */
 const MASK_DEPTH_LIMIT = 8
 
+/**
+ * 业务码类键（URL_ONLY 里的 code、ticket）：响应体里默认保留原值（{code:0}、{code:'E1001'}），
+ * 但值**像令牌**时也替换：字符串长度 ≥16，或 JWT 形态（三段 base64url，以 eyJ 开头）。
+ * 覆盖 OAuth 授权码、CAS ST/TGT 票据在响应体里回显的情况
+ */
+const TOKEN_LIKE_KEYS = new Set(['code', 'ticket'].map(normalizeKey))
+const TOKEN_LIKE_MIN_LEN = 16
+const JWT_RE = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
+
+export function looksLikeToken(v: unknown): boolean {
+  return typeof v === 'string' && (v.length >= TOKEN_LIKE_MIN_LEN || JWT_RE.test(v))
+}
+
 function maskValue(value: unknown, depth: number, personal: boolean): unknown {
   if (value === null || typeof value !== 'object') return value
   if (depth >= MASK_DEPTH_LIMIT) return '***'
@@ -74,7 +87,9 @@ function maskValue(value: unknown, depth: number, personal: boolean): unknown {
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     const key = normalizeKey(k)
     out[k] =
-      CREDENTIAL_KEYS.has(key) || (personal && PERSONAL_KEYS.has(key))
+      CREDENTIAL_KEYS.has(key) ||
+      (personal && PERSONAL_KEYS.has(key)) ||
+      (TOKEN_LIKE_KEYS.has(key) && looksLikeToken(v))
         ? '***'
         : maskValue(v, depth + 1, personal)
   }

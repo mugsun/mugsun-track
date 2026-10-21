@@ -26,11 +26,15 @@
 - **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
 - **两份清单**：凭证键清单（`token`、`access_token`、`client_secret`、`session`、`session_id`、`x-api-key`、`cookie`、`jwt`、`access_key`、`secret_key` 等）URL、hash、referrer 与响应体共用；`code`、`sign`、`signature`、`ticket`、`otp` 单列为 URL 专用清单，只在查询串、hash、referrer 里替换。这几个键在响应体里常是业务字段，比如 `{"code":0,"msg":"ok"}`，保留原值，方便看接口错误、复现问题。两份清单都按归一后精确匹配，不做子串匹配，`codeType`、`errCode`、`ticketCount` 保留。
 - **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
+- **凭证端点再补全**：路径（小写后）含 `/login`、`/signin`、`/sign-in`、`/logout`、`/token`、`/sso`、`/cas` 的接口也不采集响应体；另外只要路径里出现 `sms`、`captcha`、`otp`、`verifycode`、`verificationcode` 子串（不要求 `/` 前缀）也算，覆盖 `/sendSms`、`/user/smsCode`、`/getCaptcha`、`/verifyCode` 这类驼峰写法。可能误伤个别普通接口，代价只是少采一个响应体。
+- **响应体里像令牌的 `code` / `ticket` 也替换**：这两个键在响应体里默认保留原值（`{"code":0}`、`{"code":"E1001"}`），但值是长度 ≥16 的字符串或 JWT 形态（`eyJ…​.…​.…`）时替换为 `***`，覆盖 OAuth 授权码、CAS 票据在响应体里回显的情况。`sign`、`signature`、`otp` 仍按原规则只在 URL 里替换。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复
 
 - **页面 URL 与 referrer 脱敏**：公共属性 `referrer`（`$pageview`、`$session_start` 等所有事件都带）、自动采集的链接 `href`、资源加载错误的 `resource_url`、回放 rrweb Meta 事件里的 `href`，此前都是原文，现在都经过 URL 敏感参数脱敏。`url_path` 本来就只有 pathname，不含 query 和 hash。
+- **JS 错误的 `filename` 脱敏**：`$error` 的 `filename`（出错脚本地址）此前原样上报，CDN 地址里的 `?token=`、`?sign=` 会进到错误事件里，现在按 URL 敏感参数口径替换。
+- **回放 DOM 里的地址脱敏**：rrweb 全量快照和增量快照（新增节点、属性变更）里的 `href`、`src`、`action`、`xlink:href`、`formaction`、`poster`、`data` 属性按 URL 敏感参数口径替换，页面上带 token 的链接、预签名图片地址不再原样进回放。rrweb 2.1.1 的 `record` 没有属性级钩子（`maskAttributeFn` 只在 Sentry 分叉里有），所以在 `emit` 时处理事件。
 - **`maskSensitiveBody` 解析失败不再返回原文**：导出函数遇到非法 JSON 时整体返回 `***`。原文可能就是凭证（如 `token=...` 形式的文本）。上传器本来就丢弃这类响应体，行为不变。
 
 - 错误堆栈清洗：① 帧 URL 去掉 query / hash（常带 token、签名），保留 `:行:列`，错误指纹也按去掉后的堆栈计算，同一错误不会因 token 不同被拆成多组；② props 总量超过 16KB 时先缩 `stack`（按 UTF-8 字节），不再让服务端从尾部摘掉其它属性，4096 个中文字符的堆栈约 12KB，加上其它属性很容易超限；③ 截断不再拆开 emoji 等代理对

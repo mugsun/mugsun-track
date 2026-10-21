@@ -49,7 +49,8 @@ export function errorPlugin(): TrackPlugin {
               error_type: 'js',
               message: e.message,
               stack: e.error instanceof Error ? e.error.stack : undefined,
-              filename: e.filename,
+              // 脚本 URL 可能带签名或 token query（CDN ?sign=、?token=）：按 URL 敏感参数口径脱敏
+              filename: e.filename ? redactSensitiveUrl(e.filename) : e.filename,
               lineno: e.lineno,
               colno: e.colno
             },
