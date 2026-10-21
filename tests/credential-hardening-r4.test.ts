@@ -460,3 +460,10 @@ describe('特殊协议里反斜杠结束 authority', () => {
     ['//h\\@evil/x', '//h\\@evil/x']
   ])('%s 不动', (input, out) => expect(redactSensitiveUrl(input)).toBe(out))
 })
+
+describe('N8-2 查询串开头多余的 ?', () => {
+  it('/a??token=x 照样替换，原文的 ?? 保留', () => {
+    expect(redactSensitiveUrl('/a??token=x&b=1')).toBe('/a??token=***&b=1')
+    expect(redactSensitiveUrl('/a???token=x')).toBe('/a???token=***')
+  })
+})

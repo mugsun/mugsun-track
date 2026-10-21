@@ -210,9 +210,10 @@ function redactParamString(qs: string): string | null {
     const eq = part.indexOf('=')
     const rawKey = eq >= 0 ? part.slice(0, eq) : part
     if (!rawKey) return part
-    let key = rawKey
+    // 比较前去掉开头多余的 ?（/a??token=x 的键是 ?token），输出保留原文
+    let key = rawKey.replace(/^\?+/, '')
     try {
-      key = decodeURIComponent(rawKey.replace(/\+/g, ' '))
+      key = decodeURIComponent(key.replace(/\+/g, ' '))
     } catch {
       // 非法转义：按原文比较
     }
