@@ -260,10 +260,12 @@ export function redactSensitiveUrl(url: string): string {
 
 /**
  * userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 ***。
- * 分隔符接受 / 或 \（浏览器对 http(s) 把 \ 当 /）；userinfo 取到 authority 里**最后一个** @
- * （u:p@ss@h → *** @ h）。^ 锚定、单个贪婪字符类，回溯是线性的
+ * - 分隔符接受 / 或 \（http(s)、ws、ftp、file 等特殊协议里浏览器把 \ 当 /）。
+ * - userinfo 取到最后一个 @ 之前，且**允许含 \**：mongodb://u:p\w@h、redis://:a\b@h、
+ *   特殊协议密码里的 \ 都整段遮住。代价是 https://h\path@x 这类会多遮一段，只会多遮不会漏。
+ * ^ 锚定、单个贪婪字符类，回溯线性。已知漏判：缺 // 的 https:u:p@h
  */
-const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[\\/]{2})([^/\\?#]*)@/
+const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[\\/]{2})([^/?#]*)@/
 
 /** 路径参数：/a;jsessionid=xxx/b，键命中敏感清单时替换值 */
 const PATH_PARAM_RE = /;([^;=/?#]+)=([^;/?#]*)/g

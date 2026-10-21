@@ -435,3 +435,20 @@ describe('r5 质量复核', () => {
     expect(redactSensitiveUrl('/s?token=a&token=b')).toBe('/s?token=***&token=***')
   })
 })
+
+describe('R7 userinfo 含反斜杠', () => {
+  it.each([
+    ['mongodb://u:p\\w@h/db', 'mongodb://***@h/db'],
+    ['redis://:a\\b@h:6379', 'redis://***@h:6379'],
+    ['myapp://u:p\\q@h', 'myapp://***@h'],
+    ['https://u:p\\w@h/a', 'https://***@h/a'],
+    ['https:\\\\u:p@h/a', 'https:\\\\***@h/a'],
+    ['https:/\\u:p@h/a', 'https:/\\***@h/a'],
+    ['\\\\u:p@h/a', '\\\\***@h/a']
+  ])('%s → %s', (input, out) => expect(redactSensitiveUrl(input)).toBe(out))
+  it('线性：长串反斜杠无 @', () => {
+    const t0 = Date.now()
+    redactSensitiveUrl('mongodb://' + '\\'.repeat(200000))
+    expect(Date.now() - t0).toBeLessThan(1000)
+  })
+})
