@@ -37,15 +37,26 @@ jobs:
           chmod +x osv-scanner
           sudo mv osv-scanner /usr/local/bin/osv-scanner
 
-      # 退出码 0 = 无漏洞，1 = 有漏洞（交给 osv-gate.py 按严重度判断），其他 = 工具出错
+      # 先自测 gate，再校验忽略列表（added / ignoreUntil / reason），生成 osv-scanner 认的配置
+      - name: Self-test osv-gate
+        run: python3 scripts/test_osv_gate.py
+
+      - name: Check osv-scanner.toml
+        run: python3 scripts/osv-gate.py config osv-scanner.toml --effective "$RUNNER_TEMP/osv-effective.toml"
+
+      # 退出码交给 gate：0 = 无漏洞，1 = 有漏洞，其他 = 工具出错（gate 判失败）
       - name: Scan pnpm-lock.yaml
+        id: scan
         run: |
           rc=0
-          osv-scanner scan source --lockfile pnpm-lock.yaml --format json --output osv.json || rc=$?
-          if [ "$rc" -gt 1 ]; then echo "::error::osv-scanner failed (rc=$rc)"; exit "$rc"; fi
+          osv-scanner scan source --config "$RUNNER_TEMP/osv-effective.toml" \
+            --lockfile pnpm-lock.yaml --format json --output-file osv.json || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
 
-      - name: Gate (High/Critical with a fix fails, Medium warns)
-        run: python3 scripts/osv-gate.py osv.json osv-scanner.toml
+      - name: Gate (High/Critical fails, Medium/Low warns)
+        env:
+          OSV_RC: ${{ steps.scan.outputs.rc }}
+        run: python3 scripts/osv-gate.py results osv.json --exit-code "$OSV_RC"
 
   audit:
     name: pnpm audit (high)

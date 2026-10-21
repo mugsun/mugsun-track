@@ -1,0 +1,9 @@
+# osv-scanner 忽略列表（清单 3.1）。新增条目必须找安全官审。
+# 每条都要写 id、added（登记日期）、ignoreUntil（不超过 added 起 90 天）、reason。
+# 日期用 TOML 原生日期（不加引号），例如：
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# added = 2026-10-21
+# ignoreUntil = 2027-01-19
+# reason = "无修复版本；仅开发依赖，不进发布产物"
