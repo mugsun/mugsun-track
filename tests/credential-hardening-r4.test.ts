@@ -467,3 +467,19 @@ describe('N8-2 查询串开头多余的 ?', () => {
     expect(redactSensitiveUrl('/a???token=x')).toBe('/a???token=***')
   })
 })
+
+describe('r6', () => {
+  it('N9-1 解码后的 ? 也去掉：/a?%3Ftoken=x', () => {
+    expect(redactSensitiveUrl('/a?%3Ftoken=x&b=1')).toBe('/a?%3Ftoken=***&b=1')
+  })
+  it.each(['/APIGetToken', '/api/OAuthRefreshToken', '/XMLGetAccessToken', '/api/get%5Ftoken', '/api/refresh%2Dtoken'])(
+    '%s 命中',
+    (p) => expect(isCredentialPath(p)).toBe(true)
+  )
+  it.each(['/forgetToken', '/budgetTokenUsage', '/widget_token', '/APIForgetToken', '/bad%E0%A4%A'])('%s 不命中', (p) =>
+    expect(isCredentialPath(p)).toBe(false)
+  )
+  it('mailto: 等缺 // 的写法不遮（已知漏判）', () => {
+    expect(redactSensitiveUrl('mailto:u:p@h')).toBe('mailto:u:p@h')
+  })
+})

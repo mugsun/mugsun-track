@@ -217,6 +217,8 @@ function redactParamString(qs: string): string | null {
     } catch {
       // 非法转义：按原文比较
     }
+    // 解码后再去一次开头的 ?（/a?%3Ftoken=x 解码后是 ?token）
+    key = key.replace(/^\?+/, '')
     if (!isSensitiveUrlKey(key)) return part
     changed = true
     return `${rawKey}=***`

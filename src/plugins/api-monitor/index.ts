@@ -76,7 +76,12 @@ const CREDENTIAL_TOKEN_NOUN_RE = /(^|[^a-z])token ?(exchange|refresh)/
 
 /** 驼峰拆词 + 小写 + - _ 换空格：getAccessToken → get access token，refresh_token → refresh token */
 function tokenWords(pathname: string): string {
-  return pathname.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[-_]/g, ' ')
+  // 先拆缩写边界（APIGet → API Get），再拆驼峰（getToken → get Token）
+  return pathname
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[-_]/g, ' ')
 }
 
 /** 子串匹配（够长、几乎不会误伤）：/getCaptcha、/user/verifyCode、/api/verificationCodeCheck 都命中 */
@@ -91,7 +96,14 @@ const CREDENTIAL_PATH_SUBSTRINGS = ['captcha', 'verifycode', 'verificationcode']
 const CREDENTIAL_WORDS = new Set(['sms', 'otp', 'sendcode', 'getcode', 'checkcode'])
 
 /** 凭证端点判定（导出供测试）：pathname 小写后按片段、整段、子串、词四种规则匹配，误判只会少采一个响应体 */
-export function isCredentialPath(pathname: string): boolean {
+export function isCredentialPath(rawPathname: string): boolean {
+  // 先解码（/api/get%5Ftoken → /api/get_token）；非法转义按原文判定
+  let pathname = rawPathname
+  try {
+    pathname = decodeURIComponent(rawPathname)
+  } catch {
+    // 保持原文
+  }
   const p = pathname.toLowerCase()
   return (
     CREDENTIAL_PATH_PARTS.some((part) => p.includes(part)) ||
