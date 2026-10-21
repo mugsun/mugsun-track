@@ -10,9 +10,22 @@ permissions:
   contents: read
 
 jobs:
+  # 清单 3.2/3.8：顶层权限只读、禁 pull_request_target、id-token 只给发布 job、uses 钉 SHA
+  workflow-lint:
+    name: Workflow permissions / pinned SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Check workflows
+        run: python3 scripts/check-workflows.py
+
   build:
     name: Typecheck / Test / Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
