@@ -186,11 +186,12 @@ export const URL_ONLY_SENSITIVE_KEYS: ReadonlySet<string> = new Set(
     'signature',
     'ticket',
     'otp',
-    // 云存储预签名：Azure SAS、腾讯云 COS、阿里云 OSS
+    // 云存储预签名：Azure SAS、腾讯云 COS（含临时密钥 token）、阿里云 OSS
     'sig',
     'q-signature',
     'x-oss-signature',
-    'x-oss-security-token'
+    'x-oss-security-token',
+    'x-cos-security-token'
   ].map(normalizeKey)
 )
 

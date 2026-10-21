@@ -101,9 +101,11 @@ export function redactSrcset(v: string): string {
     let trailing = ''
     let descEnd = k
     if (url.endsWith(',')) {
-      const stripped = url.replace(/,+$/, '')
-      trailing = url.slice(stripped.length)
-      url = stripped
+      // 从末尾往前数逗号（线性），不用 /,+$/：长串逗号时正则回溯是平方级
+      let end = url.length
+      while (end > 0 && url.charCodeAt(end - 1) === 44) end--
+      trailing = url.slice(end)
+      url = url.slice(0, end)
     } else {
       let depth = 0
       while (descEnd < n) {

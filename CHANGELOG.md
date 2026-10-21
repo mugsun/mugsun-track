@@ -23,16 +23,16 @@
 - **`skipHandledErrors` 默认 `false`**：`HttpError` 及 `handled === true` / `expected === true` 的错误默认照常上报为 `$error`，与 0.2.0 一致（此前未发布的 main 上默认是 `true`）。需要跳过请显式设 `skipHandledErrors: true`。
 - **`selfCheck()` 提示**：开启响应体采集但没有显式设 `apiBodyMaskEnabled: true` 时（包括默认），privacy 项提示「响应体采集已开启，个人信息字段未脱敏（凭证类键始终脱敏）」；回放已加载但没有设 `maskTextSelector` 或 `maskAllInputs: true` 时，replay 项也提示。两者都只是 `warn`，不会 `fail`。此前只在显式设 `apiBodyMaskEnabled: false` 时提示。
 - **尊重 Global Privacy Control**：新增 `respectGpc` 选项，默认 `true`，与 `respectDnt` 一致。浏览器 `navigator.globalPrivacyControl === true` 时 SDK 停用，`selfCheck()` 的 consent 项提示。只影响开启 GPC 的用户；调试可设 `respectGpc: false`。
-- **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），以及云存储预签名参数 Azure SAS `sig`、腾讯云 COS `q-signature`、阿里云 OSS `x-oss-signature` / `x-oss-security-token`（URL 专用），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
+- **URL 敏感参数新增 `code`、`sign`、`signature`、`ticket`、`session`、`otp`**（OAuth 授权码、签名、SSO 票据、会话标识、一次性验证码），以及云存储预签名参数 Azure SAS `sig`、腾讯云 COS `q-signature`、阿里云 OSS `x-oss-signature` / `x-oss-security-token`、腾讯云 COS 临时密钥 `x-cos-security-token`（URL 专用），值替换为 `***`。hash 里的参数也会处理：OAuth 隐式流的 `#access_token=...` 和 hash 路由的 `#/cb?code=...`。
 - **两份清单**：凭证键清单（`token`、`access_token`、`client_secret`、`session`、`session_id`、`x-api-key`、`cookie`、`jwt`、`access_key`、`secret_key` 等）URL、hash、referrer 与响应体共用；`code`、`sign`、`signature`、`ticket`、`otp` 单列为 URL 专用清单，只在查询串、hash、referrer 里替换。这几个键在响应体里常是业务字段，比如 `{"code":0,"msg":"ok"}`，保留原值，方便看接口错误、复现问题。两份清单都按归一后精确匹配，不做子串匹配，`codeType`、`errCode`、`ticketCount` 保留。
 - **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
 - **凭证端点再补全**（路径小写后判定，命中则不采集响应体）：
   - 整段匹配 `login`、`signin`、`sign-in`、`logout`、`token`、`sso`、`cas`：左侧是 `/` 或开头，右侧是 `/`、`.`、`;` 或结尾。`/api/login`、`/api/v1/login.json`、`/login.do`、`/login;jsessionid=x`、`/oauth2/token`、`/cas/login` 命中；`/monitor/loginLog/list`、`/system/logininfor/list`、`/tokens/stats`、`/case/list`、`/cascade/tree`、`/api/cashier/pay` 不命中。
   - 子串匹配 `captcha`、`verifycode`、`verificationcode`，覆盖 `/getCaptcha`、`/user/verifyCode`。
   - 按词匹配 `sms`、`otp`、`sendcode`、`getcode`、`checkcode`：路径按非字母字符切词，某个词恰好相等才算。`/api/sms/send`、`/send-otp`、`/user/getcode` 命中；`/smsTemplate/list`、`/footprint/list`、`/barcode/getcodeList` 不命中。
-  - 动词组合：路径小写后含 `send`、`get`、`resend`、`check`、`verify`、`validate` 紧跟 `sms`、`otp`、`smscode`、`mobilecode`、`phonecode`，如 `/sendSms`、`/getSmsCode`、`/sendOtp`。`/smsTemplate/list` 前面没有动词，不命中。
+  - 动词组合：路径小写后含 `send`、`get`、`resend`、`check`、`verify`、`validate` 紧跟 `sms`、`otp`、`smscode`、`mobilecode`、`phonecode`、`emailcode`、`msgcode`，如 `/sendSms`、`/getSmsCode`、`/sendOtp`、`/sendEmailCode`。`/smsTemplate/list` 前面没有动词，不命中。
   - 已知误伤：段名恰好是 `token`、`cas` 等的普通接口，代价只是少采一个响应体。
-- **响应体里像令牌的 `code` / `ticket` 也替换**：这两个键在响应体里默认保留原值（`{"code":0}`、`{"code":"E1001"}`），但值像令牌时替换为 `***`：JWT 形态（三段 base64url，以 `eyJ` 开头），或长度 ≥16、只含字母、数字、`-`、`_`（base64url / hex）且同时有字母和数字的字符串。只豁免大写下划线业务码（`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$`，如 `INVALID_PARAMETER_VALUE`、`ORDER_20261021_0001`）。已知漏判：纯数字或纯字母的令牌不替换，覆盖 OAuth 授权码、CAS 票据在响应体里回显的情况。`sign`、`signature`、`otp` 仍按原规则只在 URL 里替换。
+- **响应体里像令牌的 `code` / `ticket` 也替换**：这两个键在响应体里默认保留原值（`{"code":0}`、`{"code":"E1001"}`），但值像令牌时替换为 `***`：JWT 形态（三段 base64url，以 `eyJ` 开头），或长度 ≥16、只含字母、数字和 `. _ ~ + / = -`（base64、base64url、hex，以及 `4/0Ab…` 这类 Google 授权码、带点的令牌）且同时有字母和数字的字符串。只豁免大写下划线业务码（`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$`，如 `INVALID_PARAMETER_VALUE`、`ORDER_20261021_0001`）。已知漏判：纯数字或纯字母的令牌不替换，覆盖 OAuth 授权码、CAS 票据在响应体里回显的情况。`sign`、`signature`、`otp` 仍按原规则只在 URL 里替换。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复

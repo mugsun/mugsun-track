@@ -68,8 +68,8 @@ const MASK_DEPTH_LIMIT = 8
 
 /**
  * 业务码类键（URL_ONLY 里的 code、ticket）：响应体里默认保留原值（{code:0}、{code:'E1001'}），
- * 但值**像令牌**时也替换：JWT 形态（三段 base64url，以 eyJ 开头），或长度 ≥16、只含 base64url / hex 字符
- * （字母、数字、`-`、`_`）且同时有字母和数字的字符串。
+ * 但值**像令牌**时也替换：JWT 形态（三段 base64url，以 eyJ 开头），或长度 ≥16、只含令牌常见字符
+ * （字母、数字和 `. _ ~ + / = -`，覆盖 base64 / base64url / hex 和 Google 风格的 4/0Ab… 授权码）且同时有字母和数字的字符串。
  * 豁免只有大写下划线业务码（^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$，如 INVALID_PARAMETER_VALUE、ORDER_20261021_0001）；
  * 含 `_` 本身不再豁免。已知漏判：纯数字或纯字母的令牌不替换
  * 覆盖 OAuth 授权码、CAS ST/TGT 票据在响应体里回显的情况
@@ -78,13 +78,13 @@ const TOKEN_LIKE_KEYS = new Set(['code', 'ticket'].map(normalizeKey))
 const TOKEN_LIKE_MIN_LEN = 16
 const JWT_RE = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
 const UPPER_SNAKE_CODE_RE = /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/
-const BASE64URL_RE = /^[A-Za-z0-9_-]+$/
+const TOKEN_CHARS_RE = /^[A-Za-z0-9._~+/=-]+$/
 
 export function looksLikeToken(v: unknown): boolean {
   if (typeof v !== 'string') return false
   if (JWT_RE.test(v)) return true
   if (v.length < TOKEN_LIKE_MIN_LEN || UPPER_SNAKE_CODE_RE.test(v)) return false
-  return BASE64URL_RE.test(v) && /[a-z]/i.test(v) && /\d/.test(v)
+  return TOKEN_CHARS_RE.test(v) && /[a-z]/i.test(v) && /\d/.test(v)
 }
 
 function maskValue(value: unknown, depth: number, personal: boolean): unknown {

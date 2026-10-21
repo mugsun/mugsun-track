@@ -292,3 +292,34 @@ describe('安全复核 9b93dda：P2 / P3', () => {
     expect(JSON.parse(maskSensitiveBody(JSON.stringify({ sig: 'abc' }), false))).toEqual({ sig: 'abc' })
   })
 })
+
+describe('安全复核 8aac4b8：N-1 ~ N-3、srcset 逗号', () => {
+  it('N-1 含 / 和 . 的令牌也替换；大写下划线业务码保留', () => {
+    const google = '4/0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_aBcD'
+    const dotted = 'ya29.a0AfB_byC1d2E3f4G5h6I7j8K9'
+    const b64 = 'QWxhZGRpbjpvcGVuIHNlc2FtZQ+/abc12=='
+    for (const v of [google, dotted, b64]) expect(looksLikeToken(v)).toBe(true)
+    expect(JSON.parse(maskSensitiveBody(JSON.stringify({ code: google, ticket: dotted }), false))).toEqual({
+      code: '***',
+      ticket: '***'
+    })
+    expect(looksLikeToken('INVALID_PARAMETER_VALUE')).toBe(false)
+    expect(looksLikeToken('ORDER_20261021_0001')).toBe(false)
+    expect(looksLikeToken('order 2026 10 21 0001')).toBe(false)
+  })
+  it('N-2 x-cos-security-token 在 URL 里替换', () => {
+    expect(redactSensitiveUrl('https://b.cos.ap-shanghai.myqcloud.com/k?x-cos-security-token=t&a=1')).toBe(
+      'https://b.cos.ap-shanghai.myqcloud.com/k?x-cos-security-token=***&a=1'
+    )
+  })
+  it.each(['/sendEmailCode', '/user/getMsgCode', '/verifyEmailCode'])('N-3 %s 命中', (p) =>
+    expect(isCredentialPath(p)).toBe(true)
+  )
+  it('srcset 长串逗号：线性处理，结果正确', () => {
+    const commas = ','.repeat(200000)
+    const t0 = Date.now()
+    const out = redactSrcset(`/a.jpg?token=t${commas} /b.jpg 2x`)
+    expect(Date.now() - t0).toBeLessThan(1000)
+    expect(out).toBe(`/a.jpg?token=***${commas} /b.jpg 2x`)
+  })
+})
