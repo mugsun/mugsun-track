@@ -10,7 +10,7 @@
 
 - 默认分支：`main`；不开 PR，分支在本仓跑绿、审过后普通快进推入 `main`（规则详见 [AGENTS.md](./AGENTS.md)）
 - 提交信息：Conventional Commits，主题中文；详见 [`.github/COMMIT_CONVENTION.md`](./.github/COMMIT_CONVENTION.md)
-- 提交身份：作者和提交者一律用 `Mugsun <100790155+mugsun@users.noreply.github.com>`，用仓库级 config 设置
+- 提交身份：新提交的作者和提交者一律用 `mugsun <bydongxin@gmail.com>`，用仓库级 config 设置
 - 变更记录：见 [CHANGELOG.md](./CHANGELOG.md)
 - 文档：[docs.mugsun.com](https://docs.mugsun.com/)
 - npm 包 `@mugsun/track-web`，版本以根目录 `package.json` 为准，已发布版本用 `npm view @mugsun/track-web versions` 查
@@ -37,4 +37,4 @@ Releases are published by [`.github/workflows/release.yml`](./.github/workflows/
    - `github-release`: after a successful publish, creates the `v<version>` GitHub Release with the SBOM attached.
 3. Verify with `npm view @mugsun/track-web version`, then update install versions and the changelog in mugsun-docs.
 
-Commits must be authored and committed as `Mugsun <100790155+mugsun@users.noreply.github.com>` (set via repository-level git config).
+New commits must be authored and committed as `mugsun <bydongxin@gmail.com>` (set via repository-level git config).

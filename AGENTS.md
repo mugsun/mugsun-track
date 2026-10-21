@@ -113,5 +113,5 @@ python3 scripts/check-workflows.py
   - 例外：改动 `.github/` 或受保护文件的提交，gate audit 必然判红。只要除 gate audit 外全绿、且安全官已复核，也可以快进。推入 main 后 gate audit 自动开的 issue，要在里面写明改动原因和 `gate-audit.py` 的 sha256，再关闭。
   - 涉及 `.github/` 的提交不能只看红绿，要看日志里的 `::error::`：gate audit 跑的是本次提交里的 workflow，同一提交可以把它改掉，所以必须确认报错只是预期的几类，并已交安全官复核。
   - main 上每个 SHA 的运行单独一组、不会被后来的推送取消，每次推送的结果都会保留；功能分支上同一事件的新推送会取消旧运行。
-- **提交身份（3.18）：作者和提交者一律用 `Mugsun <100790155+mugsun@users.noreply.github.com>`。** 用仓库级 config（`git config user.name` / `user.email`）或 `git -c` 设置，不改全局 config；已经推送的历史不改写；身份不对会被审查判为阻塞。
+- **提交身份（3.18）：新提交的作者和提交者一律用 `mugsun <bydongxin@gmail.com>`。** 用仓库级 config（`git config user.name` / `user.email`）或 `git -c` 设置，不改全局 config；已经推送的历史不改写。
 - 脱敏默认值、采集范围、CI / 发布 workflow、新依赖，以及上文「门禁与共享脚本」的敏感文件清单，都属于敏感改动，需安全审查。

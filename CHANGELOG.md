@@ -79,6 +79,7 @@
 - CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语
 - AGENTS.md：推送规则回到 3.16（分支先绿再快进），新增 3.18 提交身份和门禁说明。
 - CONTRIBUTING 发版流程改为 check → 审批后 publish → github-release，去掉 PR 说法。
+- 3.18 提交身份改为 mugsun <bydongxin@gmail.com>，身份不对不再判阻塞。
 
 ### CI 门禁
 
