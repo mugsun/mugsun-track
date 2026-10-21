@@ -52,9 +52,45 @@ jobs:
           node-version: '24'
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck && pnpm test && pnpm build
+      # CycloneDX SBOM（清单 3.2）：用 packageManager 钉死（含 sha512）的 pnpm 自带 sbom 命令，
+      # 只含运行时依赖；@cyclonedx/cyclonedx-npm 依赖 npm ls，读不了 pnpm 的 node_modules
+      - name: Generate CycloneDX SBOM
+        run: pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6 --prod --out sbom.cdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          if-no-files-found: error
       - name: Upgrade npm (trusted publishing needs npm >= 11.5.1)
         run: npm install -g npm@11.21.1
       - name: Publish via npm trusted publishing (OIDC, no token)
         env:
           TAG: ${{ needs.check.outputs.tag }}
         run: npm publish --provenance --access public --tag "$TAG"
+
+  # 发布成功后建 GitHub Release（tag v<版本>）并附上 SBOM；单独 job，contents: write 不和 id-token 放在一起
+  github-release:
+    name: GitHub Release with SBOM
+    needs: [check, publish]
+    if: github.ref == 'refs/heads/main' && needs.check.outputs.skip == 'false' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          ver=$(node -p "require('./package.json').version")
+          name=$(node -p "require('./package.json').name.replace('@', '').replace('/', '-')")
+          cp sbom.cdx.json "${name}-${ver}.cdx.json"
+          pre=()
+          if [ "$TAG" = next ]; then pre=(--prerelease); fi
+          gh release create "v${ver}" "${name}-${ver}.cdx.json" \
+            --target "$GITHUB_SHA" --title "v${ver}" --notes "npm: ${ver} (dist-tag ${TAG})" "${pre[@]}"
