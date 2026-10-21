@@ -242,13 +242,18 @@ export function redactSensitiveUrl(url: string): string {
   // 只改 userinfo、路径参数（;key=v）、查询串和 hash，其余部分（协议、主机、相对路径、// 前缀）逐字保留
   if (typeof url !== 'string' || !url) return url
   // 浏览器解析 URL 时会删掉 TAB/LF/CR（to\nken=x 等价于 token=x）：先删掉再匹配，命中时返回删后的形态
-  const src = /[\t\n\r]/.test(url) ? url.replace(/[\t\n\r]/g, '') : url
+  // 浏览器还会去掉开头的空白与 C0 控制字符（\x00-\x20）；两步都是线性替换
+  const src = url.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '')
   const out = redactCleanUrl(src)
   return out === src ? url : out
 }
 
-/** userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 *** */
-const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?\/\/)([^/?#@]*)@/
+/**
+ * userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 ***。
+ * 分隔符接受 / 或 \（浏览器对 http(s) 把 \ 当 /）；userinfo 取到 authority 里**最后一个** @
+ * （u:p@ss@h → *** @ h）。^ 锚定、单个贪婪字符类，回溯是线性的
+ */
+const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[\\/]{2})([^/\\?#]*)@/
 
 /** 路径参数：/a;jsessionid=xxx/b，键命中敏感清单时替换值 */
 const PATH_PARAM_RE = /;([^;=/?#]+)=([^;/?#]*)/g

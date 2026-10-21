@@ -377,3 +377,25 @@ describe('r5 安全复核', () => {
     expect(redactSensitiveUrl('/x\n?a=1')).toBe('/x\n?a=1')
   })
 })
+
+describe('r6 安全复核', () => {
+  it('R6-1 userinfo 取到最后一个 @', () => {
+    expect(redactSensitiveUrl('https://u:p@ss@h/a')).toBe('https://***@h/a')
+    expect(redactSensitiveUrl('https://u:p@ss@h/a@b?token=t')).toBe('https://***@h/a@b?token=***')
+  })
+  it('R6-2 开头空白 / 控制字符与反斜杠分隔符', () => {
+    expect(redactSensitiveUrl('  https://u:p@h/a')).toBe('https://***@h/a')
+    expect(redactSensitiveUrl('\u0000\u001fhttps://u:p@h/a')).toBe('https://***@h/a')
+    expect(redactSensitiveUrl('https:\\\\u:p@h/a')).toBe('https:\\\\***@h/a')
+    expect(redactSensitiveUrl('https:/\\u:p@h/a')).toBe('https:/\\***@h/a')
+    expect(redactSensitiveUrl('\\\\u:p@h/a')).toBe('\\\\***@h/a')
+    expect(redactSensitiveUrl('  /a?x=1')).toBe('  /a?x=1')
+  })
+  it('R6-2 长输入线性：无 @ 的长 authority、大量 @', () => {
+    const t0 = Date.now()
+    redactSensitiveUrl('https://' + 'a'.repeat(200000))
+    redactSensitiveUrl('https://' + '@'.repeat(200000) + '/x')
+    redactSensitiveUrl(' '.repeat(200000) + 'x')
+    expect(Date.now() - t0).toBeLessThan(1000)
+  })
+})
