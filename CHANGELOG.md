@@ -87,6 +87,10 @@
   - 发版时生成 CycloneDX SBOM，附到 GitHub Release。
 - 依赖 lockfile 刷新，修复 4 个有修复版本的 High 漏洞。
   - nanoid 3.3.20、source-map-js 1.2.2、vue 3.5.44、vite 8.3.4。
+  - 连带更新 rolldown 1.2.14、@babel/parser 7.29.9。
+  - 连带更新 @oxc-project/types 0.154.0。
+  - 新增 postcss 8.5.31、picomatch 4.0.7（旧版本仍保留）。
+- vitest 与 @vitest/* 升到 4.1.12，修复 GHSA-82fw-gwwq-j7x9。
 
 ### 发版流程
 
