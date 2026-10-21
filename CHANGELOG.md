@@ -80,7 +80,11 @@
 
 ### 发版流程
 
-- Release 工作流拆成两个 job。`check` 只读检查，不需要审批：只有 `npm error code E404` 才算版本未发布，其他错误直接失败；版本号用 semver@7.6.3 校验，且必须严格大于 npm latest。`publish` 只在 main 上运行，挂 `npm-release` 环境（需维护者审批）；预发布版本用 `--tag next` 发布。
+- Release 工作流拆成 check 和 publish 两个 job。
+  - check 只读，不需审批；只有 `npm error code E404` 算未发布。
+  - 版本号用 semver@7.6.3 校验，且必须严格大于 npm latest。
+  - publish 只在 main 上跑，挂 `npm-release` 环境，需维护者审批。
+  - 预发布版本用 `--tag next` 发布。
 
 ## [0.2.0] - 2026-10-13
 

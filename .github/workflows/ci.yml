@@ -22,6 +22,22 @@ jobs:
       - name: Check workflows
         run: python3 scripts/check-workflows.py
 
+  # 清单 3.3：只查本次新增的 CHANGELOG 行（行宽 <= 80、子项缩进两格）
+  changelog:
+    name: CHANGELOG lines
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/check-changelog.py "$BASE"
+
   build:
     name: Typecheck / Test / Build
     runs-on: ubuntu-latest
