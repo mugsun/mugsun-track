@@ -13,6 +13,8 @@ on:
 
 # 同一分支有新推送时取消旧运行。main 上每个 SHA 单独一组、也不取消，连推多次时排队中的运行
 # 不会被后来的推送顶掉，每次推送都要完整跑完（gate audit 逐次比对 before）
+# group 里保留 event_name（代码质量官 S1）：push、pull_request、workflow_dispatch 是不同事件，
+# 各自的结果都要留下，同一分支上不同事件的运行不应互相取消。
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

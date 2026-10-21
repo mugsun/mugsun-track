@@ -109,6 +109,7 @@
   - main 上 concurrency 按 SHA 分组；CHANGELOG 检查遇到无效 base 直接失败。
 - gate-audit 1.1.1：中文和带空格的文件名不再漏判，哈希表格式不对判失败。
 - gate-audit 1.1.2：路径先 NFC 再忽略大小写匹配受保护规则，文件名带引号或反斜杠转义判失败。
+- concurrency group 保留 event_name 并注明原因：不同事件的运行互不取消。
 - 新增 .github/CODEOWNERS（只作标注）和变异检查脚本。
 
 ### 发版流程
