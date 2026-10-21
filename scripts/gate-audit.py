@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ============================================================================
-#  gate-audit.py  门禁文件变更审计  版本 1.1.1
+#  gate-audit.py  门禁文件变更审计  版本 1.1.2
 #  共享文件，禁止各仓单独修改（与 vuln-gate.py 同一套分发和哈希）。
 #  只依赖 git 和 Python 标准库，参数全走命令行，以后可原样搬进
 #  mugsun/.github 的 reusable workflow（inputs.base -> --base）。
@@ -27,6 +27,9 @@
      十六进制 + 两个空格或空格加 * + 路径」，空行除外）。
 文件名一律用 core.quotepath=off 和 -z 读取（代码质量官 B1）：git 默认把非 ASCII
 文件名转义成带引号的八进制形式，会让受保护路径的判断失效。
+受保护路径的匹配两边都先做 NFC 规范化再 casefold（安全官补充 1），大小写变体和 NFD
+形式的路径照样命中。解析出的文件名仍以引号开头或含反斜杠（说明转义没去掉），直接判失败
+（安全官补充 2）。改名用 --no-renames 拆成删除旧路径 + 新增新路径，两个路径都会检查。
   5. base 为空、全 0 或在仓库里找不到（无法比较也按失败处理）。
 """
 import argparse
@@ -35,8 +38,9 @@ import pathlib
 import re
 import subprocess
 import sys
+import unicodedata
 
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 
 PROTECTED = (
     ".github/CODEOWNERS",
@@ -52,6 +56,7 @@ ALLOW_MARK = "gitleaks" + ":allow"   # 拆开写，免得本文件自己命中�
 GUARDS = ("sha256sum -c", "scripts/vuln-gate.py", "scripts/gate-audit.py")
 HINT = "提交说明写清理由，并交安全官复核"
 HASH_LINE = re.compile(r"^([0-9a-f]{64}) [ *](\S.*)$")
+BAD_NAME = re.compile(r'^"|\\')   # 引号开头或含反斜杠：转义没去掉
 
 
 def git(repo, *args, check=True):
@@ -66,9 +71,15 @@ def show(repo, rev, path):
     return r.stdout if r.returncode == 0 else None
 
 
-def is_protected(path):
-    return (path in PROTECTED or path.startswith(PROTECTED_DIRS)
-            or path.rsplit("/", 1)[-1] in PROTECTED_NAMES)
+def norm(path):
+    """NFC 规范化后再 casefold；路径和匹配规则都过这一道。"""
+    return unicodedata.normalize("NFC", path).casefold()
+
+
+def is_protected(path, protected=PROTECTED, dirs=PROTECTED_DIRS, names=PROTECTED_NAMES):
+    p = norm(path)
+    return (p in {norm(x) for x in protected} or p.startswith(tuple(norm(d) for d in dirs))
+            or p.rsplit("/", 1)[-1] in {norm(n) for n in names})
 
 
 def workflow_facts(text):
@@ -95,6 +106,9 @@ def audit(repo, base, head="HEAD"):
     raw = git(repo, "-c", "core.quotepath=off", "diff", "--no-renames", "--name-only", "-z",
               base, head).stdout
     names = [n for n in raw.split("\0") if n]
+    bad = sorted({n for n in names if BAD_NAME.search(n)})
+    if bad:
+        return [f"文件名 {n!r} 仍带引号或反斜杠转义，无法可靠判断是否受保护；{HINT}" for n in bad]
     for f in sorted({n for n in names if is_protected(n)}):
         errs.append(f"改动了受保护的门禁文件 {f}；{HINT}")
     diff = git(repo, "-c", "core.quotepath=off", "diff", "--no-renames", "-U0",

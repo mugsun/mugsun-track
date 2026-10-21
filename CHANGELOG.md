@@ -108,6 +108,7 @@
 - CI 和 Security 推任意分支都跑，同分支新推送取消旧运行，开 issue 只限 main。
   - main 上 concurrency 按 SHA 分组；CHANGELOG 检查遇到无效 base 直接失败。
 - gate-audit 1.1.1：中文和带空格的文件名不再漏判，哈希表格式不对判失败。
+- gate-audit 1.1.2：路径先 NFC 再忽略大小写匹配受保护规则，文件名带引号或反斜杠转义判失败。
 - 新增 .github/CODEOWNERS（只作标注）和变异检查脚本。
 
 ### 发版流程

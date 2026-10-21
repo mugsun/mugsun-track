@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.1.1 一起分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.1.2 一起分发、一起校验哈希。
 """gate-audit.py 反例集（清单 3.15、安全官 S2 / F1）。用法：python3 scripts/test_gate_audit.py"""
 import contextlib
 import hashlib
@@ -8,6 +8,7 @@ import io
 import pathlib
 import subprocess
 import tempfile
+import unicodedata
 import unittest
 
 spec = importlib.util.spec_from_file_location(
@@ -171,6 +172,55 @@ class Repo(unittest.TestCase):
         self.write("源码/a b.ts", f"const k = 'x' // {ALLOW}\n")
         self.commit("allow")
         self.assertFlag("源码/a b.ts 新增了 gitleaks 行内放行注释")
+
+    def test_case_variants_protected(self):  # 安全官补充 1
+        for rel in (".GitHub/Workflows/x.yml", "OSV-Scanner.toml", "web/.GitLeaks.toml",
+                    "Scripts/Vuln-Gate.py", ".github/ACTIONS/a/action.yml"):
+            with self.subTest(rel=rel):
+                self.assertTrue(ga.is_protected(rel))
+        self.write("sub/OSV-Scanner.toml", "# x\n")
+        self.commit("case")
+        self.assertFlag("受保护的门禁文件 sub/OSV-Scanner.toml")
+
+    def test_nfd_paths_protected(self):  # 安全官补充 1
+        nfc_cn, nfc_e = "配置/café.toml", "规则/é/"
+        nfd = lambda s: unicodedata.normalize("NFD", s)
+        self.assertNotEqual(nfd(nfc_cn), nfc_cn)
+        # 路径是 NFD、规则是 NFC，反过来也一样
+        self.assertTrue(ga.is_protected(nfd(nfc_cn), protected=(nfc_cn,)))
+        self.assertTrue(ga.is_protected(nfc_cn, protected=(nfd(nfc_cn),)))
+        self.assertTrue(ga.is_protected(nfd(nfc_e) + "x", dirs=(nfc_e,)))
+        self.assertTrue(ga.is_protected("a/" + nfd("CAFÉ.toml"), names=("café.toml",)))
+        self.assertTrue(ga.is_protected(".github/workflows/" + nfd("中文é.yml")))
+        self.assertFalse(ga.is_protected(nfd(nfc_cn)))
+
+    def test_quoted_or_escaped_name_fails(self):  # 安全官补充 2
+        for rel in ('"q.txt', "a\\303\\251.txt"):
+            with self.subTest(rel=rel):
+                self.assertTrue(ga.BAD_NAME.search(rel))
+        self.assertIsNone(ga.BAD_NAME.search('docs/a"b.md'))
+        self.write('"q.txt', "x\n")
+        self.commit("quote")
+        self.assertFlag("仍带引号或反斜杠转义")
+
+    def test_backslash_name_fails(self):  # 安全官补充 2
+        self.write("a\\3.txt", "x\n")
+        self.commit("bs")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = ga.main(["--repo", self.dir, "--base", self.base])
+        self.assertEqual(rc, 1)
+        self.assertIn("::error::文件名", out.getvalue())
+
+    def test_rename_into_and_out_of_protected(self):  # --no-renames：新旧路径都出现
+        body = "".join(f"line {i}\n" for i in range(40))
+        self.write("docs/old.toml", body)
+        self.write("web/osv-scanner.toml", body + "x\n")
+        self.base = self.commit("seed")
+        self.git("mv", "docs/old.toml", "osv-scanner.toml")
+        self.git("mv", "web/osv-scanner.toml", "web/plain.toml")
+        self.commit("rename")
+        self.assertFlag("受保护的门禁文件 osv-scanner.toml")
+        self.assertFlag("受保护的门禁文件 web/osv-scanner.toml")
 
     def test_malformed_hash_line_fails(self):  # 代码质量官 S2
         for i, bad in enumerate(("0" * 64 + "\tscripts/vuln-gate.py",

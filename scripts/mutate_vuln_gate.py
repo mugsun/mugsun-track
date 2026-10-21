@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.1.0 / gate-audit.py 1.1.1 分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 vuln-gate.py 1.1.0 / gate-audit.py 1.1.2 分发、一起校验哈希。
 """变异检查（安全官 S5）：逐个把关键规则改坏，确认测试集能发现。
 
 用法：python3 scripts/mutate_vuln_gate.py
@@ -50,7 +50,8 @@ MUTANTS = [
      'PROTECTED_DIRS = (".github/actions/",)'),
     ("审计不保护本地 action", AUDIT, 'PROTECTED_DIRS = (".github/workflows/", ".github/actions/")',
      'PROTECTED_DIRS = (".github/workflows/",)'),
-    ("审计只匹配根目录配置", AUDIT, 'or path.rsplit("/", 1)[-1] in PROTECTED_NAMES)', "or path in PROTECTED_NAMES)"),
+    ("审计只匹配根目录配置", AUDIT, 'or p.rsplit("/", 1)[-1] in {norm(n) for n in names})',
+     "or p in {norm(n) for n in names})"),
     ("审计不保护 CODEOWNERS", AUDIT, '    ".github/CODEOWNERS",\n', ""),
     ("base 有脚本缺哈希表放行", AUDIT, 'if expected is None and show(repo, base, "scripts/gate-audit.py") is not None:',
      "if False:"),
@@ -59,6 +60,14 @@ MUTANTS = [
     # -z 时 git 本来就不转义文件名，所以转义开关只在 -U0 那处 diff 上有意义
     ("diff 里的文件名按 git 默认转义（B1）", AUDIT, 'diff = git(repo, "-c", "core.quotepath=off", "diff"',
      'diff = git(repo, "-c", "core.quotepath=on", "diff"'),
+    ("受保护路径不做 NFC 规范化（安全官补充 1）", AUDIT,
+     '    return unicodedata.normalize("NFC", path).casefold()', '    return path.casefold()'),
+    ("受保护路径区分大小写（安全官补充 1）", AUDIT,
+     '    return unicodedata.normalize("NFC", path).casefold()', '    return unicodedata.normalize("NFC", path)'),
+    ("带引号或反斜杠的文件名放行（安全官补充 2）", AUDIT, "    if bad:\n        return [", "    if False:\n        return ["),
+    ("文件名清单按改名合并，旧路径漏查", AUDIT,
+     'raw = git(repo, "-c", "core.quotepath=off", "diff", "--no-renames", "--name-only"',
+     'raw = git(repo, "-c", "core.quotepath=off", "diff", "-M", "--name-only"'),
     ("哈希表格式不对的行静默跳过（S2）", AUDIT,
      '                errs.append(f"base 上 {HASH_FILE} 第 {n} 行格式不对',
      '                if False: errs.append(f"base 上 {HASH_FILE} 第 {n} 行格式不对'),
