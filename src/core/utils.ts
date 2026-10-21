@@ -158,6 +158,10 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set(
     'private_key',
     'access_key',
     'secret_key',
+    // 云存储预签名 URL
+    'x-amz-signature',
+    'x-amz-security-token',
+    'x-goog-signature',
     // 口令
     'password',
     'passwd',

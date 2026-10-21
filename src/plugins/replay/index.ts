@@ -75,27 +75,45 @@ function redactMetaHref<T>(event: T): T {
   return event
 }
 
-/** 回放 DOM 里需要按 URL 敏感参数脱敏的属性 */
+/** 回放 DOM 里需要按 URL 敏感参数脱敏的属性（属性名小写后比较，HREF 也算） */
 const URL_ATTRS = new Set(['href', 'src', 'action', 'xlink:href', 'formaction', 'poster', 'data'])
+/** 候选列表属性：`url 1x, url2 2x` 形式，逐个候选脱敏 URL、保留描述符 */
+const SRCSET_ATTRS = new Set(['srcset', 'imagesrcset'])
+
+function redactSrcset(v: string): string {
+  // data: URL 本身含逗号，无法按逗号切分；data: 也不带查询参数，原样保留
+  if (/(^|,)\s*data:/i.test(v)) return v
+  return v
+    .split(',')
+    .map((cand) => {
+      const m = /^(\s*)(\S+)(.*)$/s.exec(cand)
+      return m ? m[1] + redactSensitiveUrl(m[2]) + m[3] : cand
+    })
+    .join(',')
+}
 
 function redactAttrs(attrs: unknown): void {
   if (!attrs || typeof attrs !== 'object') return
   const a = attrs as Record<string, unknown>
   for (const name of Object.keys(a)) {
     const v = a[name]
-    if (typeof v === 'string' && v && URL_ATTRS.has(name.toLowerCase())) {
-      const r = redactSensitiveUrl(v)
-      if (r !== v) a[name] = r
-    }
+    if (typeof v !== 'string' || !v) continue
+    const n = name.toLowerCase()
+    const r = URL_ATTRS.has(n) ? redactSensitiveUrl(v) : SRCSET_ATTRS.has(n) ? redactSrcset(v) : v
+    if (r !== v) a[name] = r
   }
 }
 
-function redactNodeTree(node: unknown, depth = 0): void {
-  // 迭代深度兜底：极深 DOM 不爆栈（rrweb 快照本身也是递归结构）
-  if (!node || typeof node !== 'object' || depth > 2000) return
-  const n = node as { attributes?: unknown; childNodes?: unknown[] }
-  redactAttrs(n.attributes)
-  if (Array.isArray(n.childNodes)) for (const c of n.childNodes) redactNodeTree(c, depth + 1)
+/** 遍历节点树：显式栈，不递归，任意深度都处理（不会因层级过深漏掉子树） */
+function redactNodeTree(root: unknown): void {
+  const stack: unknown[] = [root]
+  while (stack.length) {
+    const node = stack.pop()
+    if (!node || typeof node !== 'object') continue
+    const n = node as { attributes?: unknown; childNodes?: unknown[] }
+    redactAttrs(n.attributes)
+    if (Array.isArray(n.childNodes)) for (const c of n.childNodes) stack.push(c)
+  }
 }
 
 /**

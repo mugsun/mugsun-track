@@ -68,7 +68,8 @@ const MASK_DEPTH_LIMIT = 8
 
 /**
  * 业务码类键（URL_ONLY 里的 code、ticket）：响应体里默认保留原值（{code:0}、{code:'E1001'}），
- * 但值**像令牌**时也替换：字符串长度 ≥16，或 JWT 形态（三段 base64url，以 eyJ 开头）。
+ * 但值**像令牌**时也替换：长度 ≥16、不含 `_`、同时有字母和数字的字符串，或 JWT 形态（三段 base64url，以 eyJ 开头）。
+ * INVALID_PARAMETER_VALUE、ORDER_20261021_0001 这类业务码含 `_`，保留。
  * 覆盖 OAuth 授权码、CAS ST/TGT 票据在响应体里回显的情况
  */
 const TOKEN_LIKE_KEYS = new Set(['code', 'ticket'].map(normalizeKey))
@@ -76,7 +77,9 @@ const TOKEN_LIKE_MIN_LEN = 16
 const JWT_RE = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/
 
 export function looksLikeToken(v: unknown): boolean {
-  return typeof v === 'string' && (v.length >= TOKEN_LIKE_MIN_LEN || JWT_RE.test(v))
+  if (typeof v !== 'string') return false
+  if (JWT_RE.test(v)) return true
+  return v.length >= TOKEN_LIKE_MIN_LEN && !v.includes('_') && /[a-z]/i.test(v) && /\d/.test(v)
 }
 
 function maskValue(value: unknown, depth: number, personal: boolean): unknown {
