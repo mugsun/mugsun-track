@@ -31,7 +31,7 @@
   - 子串匹配 `captcha`、`verifycode`、`verificationcode`，覆盖 `/getCaptcha`、`/user/verifyCode`。
   - 按词匹配 `sms`、`otp`、`sendcode`、`getcode`、`checkcode`：路径按非字母字符切词，某个词恰好相等才算。`/api/sms/send`、`/send-otp`、`/user/getcode` 命中；`/smsTemplate/list`、`/footprint/list`、`/barcode/getcodeList` 不命中。
   - 动词组合：路径小写后含 `send`、`get`、`resend`、`check`、`verify`、`validate` 紧跟 `sms`、`otp`、`smscode`、`mobilecode`、`phonecode`、`emailcode`、`msgcode`，如 `/sendSms`、`/getSmsCode`、`/sendOtp`、`/sendEmailCode`。`/smsTemplate/list` 前面没有动词，不命中。
-  - 令牌接口：路径先按驼峰拆词、小写，`-`、`_` 当作词间隔。动词 `get`、`refresh`、`renew`、`issue`、`exchange` 必须在词首，可接 `access`、`auth`、`id`、`session`、`csrf`、`user` 中的一个，再接 `token`；或者 `token` 在词首、后接 `exchange` / `refresh`。`/getToken`、`/refresh-token`、`/api/get_access_token`、`/getSessionToken`、`/tokenExchange`、`/token-refresh` 命中；`/forgetToken`、`/budgetTokenUsage`、`/target-token/list`、`/widget_token`、`/tokens/stats` 不命中。已知漏判：`/getJwt`；全小写、没有分隔的路径，如 `/apigettoken`、`/refreshtoken`（拆不出词）。
+  - 令牌接口：路径先按驼峰拆词、小写，`-`、`_` 当作词间隔。动词 `get`、`refresh`、`renew`、`issue`、`exchange` 必须在词首，可接 `access`、`auth`、`id`、`session`、`csrf`、`user` 中的一个，再接 `token`；或者 `token` 在词首、后接 `exchange` / `refresh`。`/getToken`、`/refresh-token`、`/api/get_access_token`、`/getSessionToken`、`/tokenExchange`、`/token-refresh` 命中；`/forgetToken`、`/budgetTokenUsage`、`/target-token/list`、`/widget_token`、`/tokens/stats` 不命中。已知漏判：`/getJwt`；全小写、没有分隔的路径，如 `/apigettoken`、`/userrefreshtoken`（动词不在词首）。
   - 已知误伤（代价只是少采一个响应体）：
     - 以令牌接口开头的普通接口：`/getTokenList`、`/getTokenizer`、`/order/getTokenFee`、`/getAuthTokenConfig`、`/tenant/getTokenStats`。
     - 含 `sms`、`otp` 这个词：`/sms-template/get`、`/otp-config/list`。
