@@ -27,7 +27,7 @@
 - **两份清单**：凭证键清单（`token`、`access_token`、`client_secret`、`session`、`session_id`、`x-api-key`、`cookie`、`jwt`、`access_key`、`secret_key` 等）URL、hash、referrer 与响应体共用；`code`、`sign`、`signature`、`ticket`、`otp` 单列为 URL 专用清单，只在查询串、hash、referrer 里替换。这几个键在响应体里常是业务字段，比如 `{"code":0,"msg":"ok"}`，保留原值，方便看接口错误、复现问题。两份清单都按归一后精确匹配，不做子串匹配，`codeType`、`errCode`、`ticketCount` 保留。
 - **凭证端点清单扩充**：路径（小写后）含 `/register`、`/signup`、`/sign-up`、`/password`、`/forgot`、`/reset-password`、`/change-password`、`/otp`、`/sms`、`/captcha`、`/mfa`、`/2fa`、`/totp`、`/verify-code`、`/verification-code` 的接口不采集响应体，事件标 `body_skipped: 'credential'`。此前只有登录、刷新令牌、OAuth 令牌、社交登录四类，且区分大小写。误判只会少采一个响应体。
 - **凭证端点再补全**：路径（小写后）含 `/login`、`/signin`、`/sign-in`、`/logout`、`/token`、`/sso`、`/cas` 的接口也不采集响应体；另外只要路径里出现 `sms`、`captcha`、`otp`、`verifycode`、`verificationcode` 子串（不要求 `/` 前缀）也算，覆盖 `/sendSms`、`/user/smsCode`、`/getCaptcha`、`/verifyCode` 这类驼峰写法。可能误伤个别普通接口，代价只是少采一个响应体。
-- **响应体里像令牌的 `code` / `ticket` 也替换**：这两个键在响应体里默认保留原值（`{"code":0}`、`{"code":"E1001"}`），但值是长度 ≥16 的字符串或 JWT 形态（`eyJ…​.…​.…`）时替换为 `***`，覆盖 OAuth 授权码、CAS 票据在响应体里回显的情况。`sign`、`signature`、`otp` 仍按原规则只在 URL 里替换。
+- **响应体里像令牌的 `code` / `ticket` 也替换**：这两个键在响应体里默认保留原值（`{"code":0}`、`{"code":"E1001"}`），但值是长度 ≥16 的字符串或 JWT 形态（三段 base64url，以 `eyJ` 开头）时替换为 `***`，覆盖 OAuth 授权码、CAS 票据在响应体里回显的情况。`sign`、`signature`、`otp` 仍按原规则只在 URL 里替换。
 - collect 上报地址追加 `?app_key=`（网关/CDN 访问日志会出现 appKey；appKey 本就公开，非机密）。
 
 ### 修复
