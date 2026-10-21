@@ -91,6 +91,8 @@
   - 连带更新 @oxc-project/types 0.154.0。
   - 新增 postcss 8.5.31、picomatch 4.0.7（旧版本仍保留）。
 - vitest 与 @vitest/* 升到 4.1.12，修复 GHSA-82fw-gwwq-j7x9。
+- 漏洞门禁换成共享脚本 vuln-gate.py 1.0.0，CI 先校验哈希。
+  - 严重度大小写不敏感，缺失时按 CVSS 向量算分，算不出按 High。
 
 ### 发版流程
 

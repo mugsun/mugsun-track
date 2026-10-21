@@ -39,26 +39,33 @@ jobs:
           chmod +x osv-scanner
           sudo mv osv-scanner /usr/local/bin/osv-scanner
 
-      # 先自测 gate，再校验忽略列表（added / ignoreUntil / reason），生成 osv-scanner 认的配置
-      - name: Self-test osv-gate
-        run: python3 scripts/test_osv_gate.py
+      # 共享门禁（清单 3.13）：先校验拷贝的脚本没被改，再自测、校验忽略列表
+      - name: Verify shared vuln-gate
+        run: sha256sum -c scripts/vuln-gate.sha256
+
+      - name: Self-test vuln-gate
+        run: |
+          python3 scripts/test_vuln_gate.py
+          python3 scripts/test_security_workflow.py
 
       - name: Check osv-scanner.toml
-        run: python3 scripts/osv-gate.py config osv-scanner.toml --effective "$RUNNER_TEMP/osv-effective.toml"
+        run: python3 scripts/vuln-gate.py config osv-scanner.toml --effective "$RUNNER_TEMP/osv-effective.toml"
 
-      # 退出码交给 gate：0 = 无漏洞，1 = 有漏洞，其他 = 工具出错（gate 判失败）
+      # --all-packages 列出全部包，门禁据此确认「扫到了东西」；退出码交给门禁判断
       - name: Scan pnpm-lock.yaml
         id: scan
         run: |
           rc=0
-          osv-scanner scan source --config "$RUNNER_TEMP/osv-effective.toml" \
+          osv-scanner scan source --all-packages --config "$RUNNER_TEMP/osv-effective.toml" \
             --lockfile pnpm-lock.yaml --format json --output-file osv.json || rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
 
       - name: Gate (High/Critical fails, Medium/Low warns)
         env:
           OSV_RC: ${{ steps.scan.outputs.rc }}
-        run: python3 scripts/osv-gate.py results osv.json --exit-code "$OSV_RC"
+        run: |
+          python3 scripts/vuln-gate.py results --format osv --exit-code "$OSV_RC" \
+            --ignores osv-scanner.toml --require-packages osv.json
 
   audit:
     name: pnpm audit (high)
@@ -72,8 +79,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
-      # 只读 lockfile 查询 advisories，不装依赖、不跑安装脚本
-      - run: pnpm audit --audit-level=high
+      - name: Verify shared vuln-gate
+        run: sha256sum -c scripts/vuln-gate.sha256
+      # 只读 lockfile 查询 advisories，不装依赖、不跑安装脚本；结果交给共享门禁判定
+      - name: pnpm audit
+        id: audit
+        run: |
+          rc=0
+          pnpm audit --audit-level=high --json > audit.json || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+      - name: Gate
+        env:
+          AUDIT_RC: ${{ steps.audit.outputs.rc }}
+        run: |
+          python3 scripts/vuln-gate.py results --format pnpm-audit --exit-code "$AUDIT_RC" \
+            --ignores osv-scanner.toml --require-packages audit.json
 
   # 清单 3.2、3.6：密钥扫描，push、PR 和每日定时都跑；fetch-depth: 0 拿全历史
   gitleaks:
