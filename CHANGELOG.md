@@ -78,6 +78,14 @@
 
 - CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语
 
+### CI 门禁
+
+- CI 新增机械检查，按 2026-10-21 定稿的检查清单接入。
+  - workflow 顶层只读权限、禁 pull_request_target、uses 钉 SHA。
+  - osv-scanner 与 `pnpm audit --audit-level=high`，每天定时再跑。
+  - 每日扫描失败自动开 issue；CHANGELOG 新增行检查行宽和缩进。
+  - 发版时生成 CycloneDX SBOM，附到 GitHub Release。
+
 ### 发版流程
 
 - Release 工作流拆成 check 和 publish 两个 job。
