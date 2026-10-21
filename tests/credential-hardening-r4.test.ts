@@ -345,3 +345,35 @@ describe('r5', () => {
     expect(JSON.parse(maskSensitiveBody(JSON.stringify({ code: v }), false))).toEqual({ code: '***' })
   })
 })
+
+describe('r5 安全复核', () => {
+  it.each([
+    '/refresh-token',
+    '/refresh_token',
+    '/get-token',
+    '/api/get_access_token',
+    '/getAuthToken',
+    '/getIdToken',
+    '/issueToken',
+    '/exchangeToken'
+  ])('R5-1 %s 命中', (p) => expect(isCredentialPath(p)).toBe(true))
+  it.each(['/tokens/stats', '/user/profile'])('R5-1 %s 不命中', (p) => expect(isCredentialPath(p)).toBe(false))
+
+  it('R5-2 userinfo 替换为 ***，协议与主机保留', () => {
+    expect(redactSensitiveUrl('https://user:pass@ex.com/a?b=1')).toBe('https://***@ex.com/a?b=1')
+    expect(redactSensitiveUrl('//admin@cdn.x/a')).toBe('//***@cdn.x/a')
+    expect(redactSensitiveUrl('ftp://u:p@h/f?token=t')).toBe('ftp://***@h/f?token=***')
+    expect(redactSensitiveUrl('https://ex.com/a@b')).toBe('https://ex.com/a@b')
+    expect(redactSensitiveUrl('/path/a@b?x=1')).toBe('/path/a@b?x=1')
+  })
+  it('R5-3 路径参数 ;jsessionid= 等敏感键替换', () => {
+    expect(redactSensitiveUrl('/app/login;jsessionid=ABC123?x=1')).toBe('/app/login;jsessionid=***?x=1')
+    expect(redactSensitiveUrl('https://ex.com/a;token=t;v=2/b')).toBe('https://ex.com/a;token=***;v=2/b')
+    expect(redactSensitiveUrl('/a;v=2/b')).toBe('/a;v=2/b')
+  })
+  it('R5-4 先删 TAB/LF/CR 再匹配', () => {
+    expect(redactSensitiveUrl('/x?to\nken=abc&a=1')).toBe('/x?token=***&a=1')
+    expect(redactSensitiveUrl('/x?ac\tcess_tok\ren=abc')).toBe('/x?access_token=***')
+    expect(redactSensitiveUrl('/x\n?a=1')).toBe('/x\n?a=1')
+  })
+})

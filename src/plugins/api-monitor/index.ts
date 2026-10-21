@@ -63,8 +63,11 @@ const CREDENTIAL_SEGMENT_RE = /(^|\/)(login|signin|sign-in|logout|token|sso|cas)
  */
 const CREDENTIAL_COMBO_RE = /(send|get|resend|check|verify|validate)(sms|otp|smscode|mobilecode|phonecode|emailcode|msgcode)/
 
-/** 驼峰令牌接口：/getToken、/refreshToken、/renewAccessToken（小写后子串匹配） */
-const CREDENTIAL_TOKEN_COMBO_RE = /(get|refresh|renew)(access)?token/
+/**
+ * 令牌接口：路径小写并去掉 - _ 后子串匹配，/getToken、/refresh-token、/api/get_access_token、
+ * /getAuthToken、/getIdToken、/issueToken、/exchangeToken 都算。已知误伤：/getTokenList
+ */
+const CREDENTIAL_TOKEN_COMBO_RE = /(get|refresh|renew|issue|exchange)(access|auth|id)?token/
 
 /** 子串匹配（够长、几乎不会误伤）：/getCaptcha、/user/verifyCode、/api/verificationCodeCheck 都命中 */
 const CREDENTIAL_PATH_SUBSTRINGS = ['captcha', 'verifycode', 'verificationcode']
@@ -84,7 +87,7 @@ export function isCredentialPath(pathname: string): boolean {
     CREDENTIAL_PATH_PARTS.some((part) => p.includes(part)) ||
     CREDENTIAL_SEGMENT_RE.test(p) ||
     CREDENTIAL_COMBO_RE.test(p) ||
-    CREDENTIAL_TOKEN_COMBO_RE.test(p) ||
+    CREDENTIAL_TOKEN_COMBO_RE.test(p.replace(/[-_]/g, '')) ||
     CREDENTIAL_PATH_SUBSTRINGS.some((part) => p.includes(part)) ||
     p.split(/[^a-z]+/).some((w) => CREDENTIAL_WORDS.has(w))
   )

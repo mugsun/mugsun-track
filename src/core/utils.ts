@@ -239,16 +239,41 @@ export function normalizeEndpoint(endpoint: string): string {
 }
 
 export function redactSensitiveUrl(url: string): string {
-  // 只改查询串和 hash，其余部分（协议、主机、相对路径、// 协议相对前缀）逐字保留，不经 URL 解析归一
+  // 只改 userinfo、路径参数（;key=v）、查询串和 hash，其余部分（协议、主机、相对路径、// 前缀）逐字保留
   if (typeof url !== 'string' || !url) return url
+  // 浏览器解析 URL 时会删掉 TAB/LF/CR（to\nken=x 等价于 token=x）：先删掉再匹配，命中时返回删后的形态
+  const src = /[\t\n\r]/.test(url) ? url.replace(/[\t\n\r]/g, '') : url
+  const out = redactCleanUrl(src)
+  return out === src ? url : out
+}
+
+/** userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 *** */
+const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?\/\/)([^/?#@]*)@/
+
+/** 路径参数：/a;jsessionid=xxx/b，键命中敏感清单时替换值 */
+const PATH_PARAM_RE = /;([^;=/?#]+)=([^;/?#]*)/g
+
+function redactCleanUrl(url: string): string {
   const hashAt = url.indexOf('#')
   const beforeHash = hashAt >= 0 ? url.slice(0, hashAt) : url
   const hashPart = hashAt >= 0 ? url.slice(hashAt) : ''
   const qAt = beforeHash.indexOf('?')
-  const base = qAt >= 0 ? beforeHash.slice(0, qAt) : beforeHash
+  let base = qAt >= 0 ? beforeHash.slice(0, qAt) : beforeHash
   let query = qAt >= 0 ? beforeHash.slice(qAt + 1) : null
   let hash = hashPart
   let changed = false
+  const ui = USERINFO_RE.exec(base)
+  if (ui && ui[2]) {
+    base = `${ui[1]}***@${base.slice(ui[0].length)}`
+    changed = true
+  }
+  if (base.includes(';')) {
+    const pb = base.replace(PATH_PARAM_RE, (m, k: string) => (isSensitiveUrlKey(k) ? `;${k}=***` : m))
+    if (pb !== base) {
+      base = pb
+      changed = true
+    }
+  }
   try {
     if (query) {
       const r = redactParamString(query)
