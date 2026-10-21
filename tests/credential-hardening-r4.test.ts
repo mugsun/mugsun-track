@@ -441,7 +441,7 @@ describe('R7 userinfo 含反斜杠', () => {
     ['mongodb://u:p\\w@h/db', 'mongodb://***@h/db'],
     ['redis://:a\\b@h:6379', 'redis://***@h:6379'],
     ['myapp://u:p\\q@h', 'myapp://***@h'],
-    ['https://u:p\\w@h/a', 'https://***@h/a'],
+    ['wss://u:p@h/a', 'wss://***@h/a'],
     ['https:\\\\u:p@h/a', 'https:\\\\***@h/a'],
     ['https:/\\u:p@h/a', 'https:/\\***@h/a'],
     ['\\\\u:p@h/a', '\\\\***@h/a']
@@ -451,4 +451,12 @@ describe('R7 userinfo 含反斜杠', () => {
     redactSensitiveUrl('mongodb://' + '\\'.repeat(200000))
     expect(Date.now() - t0).toBeLessThan(1000)
   })
+})
+
+describe('特殊协议里反斜杠结束 authority', () => {
+  it.each([
+    ['https://h\\@evil/x', 'https://h\\@evil/x'],
+    ['https://u:p\\w@h/a', 'https://u:p\\w@h/a'],
+    ['//h\\@evil/x', '//h\\@evil/x']
+  ])('%s 不动', (input, out) => expect(redactSensitiveUrl(input)).toBe(out))
 })

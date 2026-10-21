@@ -252,20 +252,23 @@ export function redactSensitiveUrl(url: string): string {
   // 只改 userinfo、路径参数（;key=v）、查询串和 hash，其余部分（协议、主机、相对路径、// 前缀）逐字保留
   if (typeof url !== 'string' || !url) return url
   // 浏览器解析 URL 时会删掉 TAB/LF/CR（to\nken=x 等价于 token=x）：先删掉再匹配，命中时返回删后的形态
-  // 浏览器还会去掉开头的空白与 C0 控制字符（\x00-\x20）；两步都是线性替换
+  // 浏览器还会去掉开头的空白与 C0 控制字符（\x00-\x20，本身已含 TAB/LF/CR，开头的这些两步都会删）；两步都是线性替换
   const src = url.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+/, '')
   const out = redactCleanUrl(src)
   return out === src ? url : out
 }
 
 /**
- * userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 ***。
- * - 分隔符接受 / 或 \（http(s)、ws、ftp、file 等特殊协议里浏览器把 \ 当 /）。
- * - userinfo 取到最后一个 @ 之前，且**允许含 \**：mongodb://u:p\w@h、redis://:a\b@h、
- *   特殊协议密码里的 \ 都整段遮住。代价是 https://h\path@x 这类会多遮一段，只会多遮不会漏。
- * ^ 锚定、单个贪婪字符类，回溯线性。已知漏判：缺 // 的 https:u:p@h
+ * userinfo：scheme://user:pass@host 或 //user:pass@host，整段替换为 ***，取到 authority 里最后一个 @。按协议区分：
+ * - 特殊协议（http、https、ws、wss、ftp、file）与协议相对 URL：// 可写成 \\，且 \\ 和 / 一样结束 authority
+ *   （与浏览器一致），所以 https://h\\@evil/x 不动，https:\\\\u:p@h 遮住。
+ * - 其他协议（mongodb、redis、自定义）：必须是 //，\\ 是普通字符，mongodb://u:p\\w@h 整段遮住。
+ * 都是 ^ 锚定、单个贪婪字符类，回溯线性。已知漏判：缺 // 的 https:u:p@h
  */
-const USERINFO_RE = /^((?:[a-zA-Z][a-zA-Z0-9+.-]*:)?[\\/]{2})([^/?#]*)@/
+const SPECIAL_USERINFO_RE = /^((?:(?:https?|wss?|ftp|file):)?[\\/]{2})([^/\\?#]*)@/i
+/** 特殊协议或协议相对（含反斜杠写法）开头 */
+const SPECIAL_SCHEME_RE = /^(?:(?:https?|wss?|ftp|file):|[\\/]{2})/i
+const OTHER_USERINFO_RE = /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/?#]*)@/
 
 /** 路径参数：/a;jsessionid=xxx/b，键命中敏感清单时替换值 */
 const PATH_PARAM_RE = /;([^;=/?#]+)=([^;/?#]*)/g
@@ -279,7 +282,7 @@ function redactCleanUrl(url: string): string {
   let query = qAt >= 0 ? beforeHash.slice(qAt + 1) : null
   let hash = hashPart
   let changed = false
-  const ui = USERINFO_RE.exec(base)
+  const ui = SPECIAL_SCHEME_RE.test(base) ? SPECIAL_USERINFO_RE.exec(base) : OTHER_USERINFO_RE.exec(base)
   if (ui && ui[2]) {
     base = `${ui[1]}***@${base.slice(ui[0].length)}`
     changed = true
