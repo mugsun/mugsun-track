@@ -19,7 +19,7 @@
 | `src/vue/` | Vue 插件（`app.use(MugsunTrack, …)`），见下文 |
 | `src/adapters.ts` | 浏览器适配（KV、传输、DNT/GPC、`IdbQueueStore`、`defaultConfigFetcher`、`browserContextProvider`） |
 | `tests/` | Vitest 用例 |
-| `scripts/` | `check-changelog.py`、`osv-gate.py`、`report-size.mjs`、`release-check.sh` 等 |
+| `scripts/` | `check-changelog.py`、`check-workflows.py`、`report-size.mjs`、`release-check.sh`，以及下文「门禁与共享脚本」里的共享门禁脚本 |
 
 导出子路径见 `package.json` 的 `exports`：`.`、`./core`、`./vue`、`./replay`，各有 `types` / `import` / `require` 三个条件，另配 `typesVersions`。`./replay` 对应 `src/plugins/replay`，rrweb 是外部依赖、运行时按需动态加载。
 
@@ -74,8 +74,23 @@ python3 scripts/check-workflows.py
 
 - 体积门禁（`scripts/report-size.mjs`，`pnpm build` 内执行）：core 入口 gzip ≤ 8KB；replay 入口（ESM 和 CJS）gzip ≤ 6KB，且禁止把 rrweb 打包进去。超限时 `pnpm build` 退出码为 1。
 - `check-changelog.py` 只检查相对基准新增的行；CI 里 push 用 before、PR 用 base 作基准。本地用 `origin/main`，用 `HEAD~1` 只会查最后一个提交。
-- `.github/workflows/security.yml`（Security scan）跑 osv-scanner、`pnpm audit --audit-level=high`、gitleaks（全历史）；触发：push 到 main、PR 指向 main、每天定时一次、可手动触发；定时任务失败或取消会开 issue（以 security.yml 为准）。本地可跑 `pnpm audit --audit-level=high` 和 `gitleaks git --redact --no-banner --exit-code 1 .`；osv 步骤照 workflow 执行。
+- `.github/workflows/security.yml`（Security scan）跑 osv-scanner、`pnpm audit --audit-level=high`、gitleaks（全历史）和 gate audit；触发：push 到任意分支、PR 指向 main、每天定时一次、可手动触发；main 上定时任务失败或取消、main 上 push 的 gate audit 失败会开 issue（以 security.yml 为准）。本地可跑 `pnpm audit --audit-level=high` 和 `gitleaks git --redact --no-banner --exit-code 1 .`；osv 步骤照 workflow 执行。
 - 版本要求：`engines` 为 node ≥ 22.13、pnpm ≥ 11.11（另见 `packageManager`）；CI 用 Node 22，Release 用 Node 24。
+
+## 门禁与共享脚本
+
+- 共享文件：`scripts/` 下的 `vuln-gate.py`、`gate-audit.py`、`test_vuln_gate.py`、`test_gate_audit.py`、`mutate_vuln_gate.py`、`vuln-gate.sha256`。各仓共用一份，**禁止在本仓单独修改**；升级照共享副本 README 的流程整套替换，并同步哈希表。
+- `osv-scanner.toml` 的忽略条目（`[[IgnoredVulns]]`）必须有 `id`、`scope`、`added`、`ignoreUntil`、`reason` 五项，不许多写其他键。`scope` 只能是 `prod`（`ignoreUntil` 距 `added` 不超过 30 天）或 `dev`（不超过 90 天），日期用 TOML 原生日期。新增或修改条目要找安全官审，复核时要核对 scope 是否属实。
+- gate audit（`security.yml` 的 `gate-audit` job，脚本 `scripts/gate-audit.py`）：比较 base 和 head，下列任一情况判红：
+  - 改动 `.github/workflows/`、`.github/actions/`、`.github/CODEOWNERS`；
+  - 改动共享脚本、哈希表、`check-workflows.py`、`test_security_workflow.py`；
+  - 改动任意目录下的 `osv-scanner.toml`、`.gitleaks.toml`、`.gitleaksignore`；
+  - 新增行里出现 gitleaks 行内放行注释；共享脚本和 base 上哈希表不一致；
+  - base 为空、全 0 或找不到。
+  - 路径先做 NFC 规范化再忽略大小写比较；文件名含引号开头或反斜杠直接判红。
+  - main 上的 push 判红时自动开 issue「门禁审计失败，需安全官复核」。提交说明要写清理由，并交安全官复核。
+- 敏感文件清单（改动属于敏感改动、需安全官复核）：`.github/` 下全部文件（含 `CODEOWNERS`）、上面的共享脚本和哈希表、`osv-scanner.toml`、`.gitleaks.toml`、`.gitleaksignore`、gitleaks 行内放行注释，以及下文「提交与推送」列的脱敏默认值、采集范围、新依赖。
+- `.github/CODEOWNERS` 只起标注作用：本仓不走 PR，也没开「需要 code owner 审核」，真正的拦截靠 gate audit。
 
 ## 本地构建
 
@@ -93,6 +108,10 @@ python3 scripts/check-workflows.py
 - Conventional Commits，主题中文，不超过 50 字，不用 emoji；详见 `.github/COMMIT_CONVENTION.md`。
 - `CHANGELOG.md` 写在 `## [Unreleased]` 下，**每行不超过 80 字**（CI 用 `scripts/check-changelog.py` 检查本次新增行）。
 - 不用 `git stash`；切换工作用 `git worktree`。
-- 不开 PR：本地分支实测 → 代码质量官审（敏感改动加安全官）→ 作者普通快进推入 `main`。
-- **本仓没有配置必需检查和分支保护；`CI` 和 `Security scan` 只在 push 到 main 和 PR 指向 main 时触发，功能分支不会跑。所以先在本地跑通测试和构建，审完再普通快进推入 main；推入后用 `gh run list --commit <sha>` 确认 `CI` 和 `Security scan` 都绿，红了立刻修。不要 force push，不要 rebase 已推送分支。**
-- 脱敏默认值、采集范围、CI / 发布 workflow、新依赖属于敏感改动，需安全审查。
+- 不开 PR：本地分支实测 → 推分支 → 代码质量官审（敏感改动加安全官）→ 作者普通快进推入 `main`。
+- **推送规则（3.16）：本仓没有配置必需检查和分支保护。`CI` 和 `Security scan` 推任意分支都会跑；分支最新的提交必须先在分支上跑完这两个 workflow 且全绿（`gh run list --commit <sha>`），才能快进合入 main。不要 force push，不要 rebase 已推送分支。**
+  - 例外：改动 `.github/` 或受保护文件的提交，gate audit 必然判红。只要除 gate audit 外全绿、且安全官已复核，也可以快进。推入 main 后 gate audit 自动开的 issue，要在里面写明改动原因和 `gate-audit.py` 的 sha256，再关闭。
+  - 涉及 `.github/` 的提交不能只看红绿，要看日志里的 `::error::`：gate audit 跑的是本次提交里的 workflow，同一提交可以把它改掉，所以必须确认报错只是预期的几类，并已交安全官复核。
+  - main 上每个 SHA 的运行单独一组、不会被后来的推送取消，每次推送的结果都会保留；功能分支上同一事件的新推送会取消旧运行。
+- **提交身份（3.18）：作者和提交者一律用 `Mugsun <100790155+mugsun@users.noreply.github.com>`。** 用仓库级 config（`git config user.name` / `user.email`）或 `git -c` 设置，不改全局 config；已经推送的历史不改写；身份不对会被审查判为阻塞。
+- 脱敏默认值、采集范围、CI / 发布 workflow、新依赖，以及上文「门禁与共享脚本」的敏感文件清单，都属于敏感改动，需安全审查。
