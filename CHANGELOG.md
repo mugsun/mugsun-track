@@ -85,6 +85,8 @@
   - osv-scanner 与 `pnpm audit --audit-level=high`，每天定时再跑。
   - 每日扫描失败自动开 issue；CHANGELOG 新增行检查行宽和缩进。
   - 发版时生成 CycloneDX SBOM，附到 GitHub Release。
+- 依赖 lockfile 刷新，修复 4 个有修复版本的 High 漏洞。
+  - nanoid 3.3.20、source-map-js 1.2.2、vue 3.5.44、vite 8.3.4。
 
 ### 发版流程
 
