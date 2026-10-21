@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.1.0 一起分发、一起校验哈希。
+# 共享文件，禁止各仓单独修改。随 gate-audit.py 1.1.1 一起分发、一起校验哈希。
 """gate-audit.py 反例集（清单 3.15、安全官 S2 / F1）。用法：python3 scripts/test_gate_audit.py"""
 import contextlib
 import hashlib
@@ -148,6 +148,48 @@ class Repo(unittest.TestCase):
                 self.commit(rel)
                 e = self.errs()
                 self.assertTrue(any(f"受保护的门禁文件 {rel}" in x for x in e), e)
+
+    def test_non_ascii_workflow_name(self):  # 代码质量官 B1
+        rel = ".github/workflows/工作.yml"
+        self.write(rel, "on: pull_request_target\n")
+        self.commit("cn")
+        self.assertFlag(f"受保护的门禁文件 {rel}")
+
+    def test_osv_config_in_non_ascii_dir(self):  # B1
+        rel = "中文/osv-scanner.toml"
+        self.write(rel, "# x\n")
+        self.commit("cn dir")
+        self.assertFlag(f"受保护的门禁文件 {rel}")
+
+    def test_workflow_name_with_space(self):  # B1
+        rel = ".github/workflows/a b.yml"
+        self.write(rel, "on: push\n")
+        self.commit("space")
+        self.assertFlag(f"受保护的门禁文件 {rel}")
+
+    def test_inline_allow_in_non_ascii_path_with_space(self):
+        self.write("源码/a b.ts", f"const k = 'x' // {ALLOW}\n")
+        self.commit("allow")
+        self.assertFlag("源码/a b.ts 新增了 gitleaks 行内放行注释")
+
+    def test_malformed_hash_line_fails(self):  # 代码质量官 S2
+        for i, bad in enumerate(("0" * 64 + "\tscripts/vuln-gate.py",
+                                 "abc  scripts/vuln-gate.py", "0" * 64,
+                                 "0" * 64 + "scripts/vuln-gate.py")):
+            with self.subTest(bad=bad):
+                self.write("scripts/vuln-gate.sha256", self.sums() + bad + "\n")
+                self.base = self.commit(f"bad table {i}")
+                self.write("src/a.ts", f"v{i}\n")
+                self.commit(f"feat {i}")
+                self.assertFlag("格式不对")
+
+    def test_hash_table_blank_lines_and_star_ok(self):
+        star = self.sums().replace("  scripts/", " *scripts/")
+        self.write("scripts/vuln-gate.sha256", star + "\n")
+        self.base = self.commit("star")
+        self.write("src/a.ts", "z\n")
+        self.commit("feat")
+        self.assertEqual(self.errs(), [])
 
     def test_other_github_file_passes(self):
         self.write(".github/COMMIT_CONVENTION.md", "x\n")

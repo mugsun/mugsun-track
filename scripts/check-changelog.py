@@ -2,11 +2,13 @@
 # CHANGELOG 新增行检查（清单 3.3）。只查本次 diff 新增的行，历史条目不管。
 # 规则：每行 python len <= 80；子项缩进两格。
 # 用法: check-changelog.py <base_sha> [file]
-#   CI：push 用 github.event.before，PR 用 base sha；本地 pre-commit 用 HEAD。
+#   CI：main 上 push 用 github.event.before，功能分支和手动触发用 merge-base(origin/main, HEAD)，
+#   PR 用 base sha；CI 在调用前已校验 base 非空、非全 0、可达（代码质量官 S1）。
+#   本地 pre-commit 用 HEAD，或 origin/main。
 import subprocess, sys
 base = sys.argv[1]
 f = sys.argv[2] if len(sys.argv) > 2 else "CHANGELOG.md"
-if set(base) == {"0"}:  # 新分支首推
+if set(base) == {"0"}:  # 只给本地兜底；CI 遇到全 0 已先判红
     base = "HEAD~1"
 diff = subprocess.run(
     ["git", "diff", "-U0", base, "HEAD", "--", f],

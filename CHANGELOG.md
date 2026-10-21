@@ -106,6 +106,8 @@
   - PR 改用 merge-base 比较；base 有脚本缺哈希表判失败。
   - push 上审计失败自动开 issue（只有 issues: write）。
 - CI 和 Security 推任意分支都跑，同分支新推送取消旧运行，开 issue 只限 main。
+  - main 上 concurrency 按 SHA 分组；CHANGELOG 检查遇到无效 base 直接失败。
+- gate-audit 1.1.1：中文和带空格的文件名不再漏判，哈希表格式不对判失败。
 - 新增 .github/CODEOWNERS（只作标注）和变异检查脚本。
 
 ### 发版流程

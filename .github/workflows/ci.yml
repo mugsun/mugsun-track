@@ -8,9 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# 同一分支有新推送时取消旧运行；main 上不取消，每次推送都要完整跑完（gate audit 逐次比对 before）
+# 同一分支有新推送时取消旧运行。main 上每个 SHA 单独一组、也不取消，连推多次时排队中的运行
+# 不会被后来的推送顶掉，每次推送都要完整跑完（gate audit 逐次比对 before）
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -25,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Check workflows
         run: python3 scripts/check-workflows.py
@@ -39,6 +42,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check CHANGELOG
         env:
@@ -48,7 +52,19 @@ jobs:
         run: |
           # 功能分支推送和手动触发：和 origin/main 的 merge-base 比（首推时 before 全 0）
           if [ "$EVENT" = workflow_dispatch ] || { [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; }; then
-            BASE=$(git merge-base origin/main HEAD)
+            if ! BASE=$(git merge-base origin/main HEAD); then
+              echo "::error::算不出和 origin/main 的 merge-base，无法检查 CHANGELOG"
+              exit 1
+            fi
+          fi
+          # 代码质量官 S1：BASE 为空、全 0 或不可达时直接失败；脚本里退回 HEAD~1 的兜底只给本地用
+          case "$BASE" in
+            "" | *[!0]*) ;;
+            *) echo "::error::base 全 0，无法检查 CHANGELOG"; exit 1 ;;
+          esac
+          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "::error::base '${BASE}' 为空或不可达，无法检查 CHANGELOG"
+            exit 1
           fi
           python3 scripts/check-changelog.py "$BASE"
 
@@ -59,6 +75,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # 版本取自 package.json 的 packageManager（与 mugsun-pc 同为 pnpm@11.28.2，需 Node >= 22.13）
       - name: Setup pnpm

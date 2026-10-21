@@ -47,7 +47,8 @@ class SecurityWorkflow(unittest.TestCase):
 
     def test_gate_audit_on_push_and_pr(self):
         job = self.gate_audit_job()
-        self.assertIn("if: github.event_name == 'push' || github.event_name == 'pull_request'", job)
+        self.assertIn("if: github.event_name == 'push' || github.event_name == 'pull_request' "
+                      "|| github.event_name == 'workflow_dispatch'", job)
         self.assertIn("fetch-depth: 0", job)
         self.assertIn("github.event.pull_request.base.sha || github.event.before", job)
         self.assertIn('BASE_SHA=$(git merge-base "$BASE_SHA" HEAD)', job)
@@ -100,7 +101,8 @@ class SecurityWorkflow(unittest.TestCase):
 
     def test_branch_push_uses_merge_base_with_main(self):  # 清单 3.16
         job = self.gate_audit_job()
-        branch = job.index('if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then')
+        branch = job.index('if [ "$EVENT" = workflow_dispatch ] || { [ "$EVENT" = push ] '
+                           '&& [ "$REF" != refs/heads/main ]; }; then')
         mb = job.index("BASE_SHA=$(git merge-base origin/main HEAD)")
         zero = job.index('*) echo "::error::base 全 0')
         self.assertLess(branch, mb)
@@ -129,8 +131,9 @@ class Triggers(unittest.TestCase):
             with self.subTest(name=name):
                 t = self.wf(name)
                 self.assertIn("\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}"
-                              "-${{ github.ref }}\n  cancel-in-progress: ${{ github.ref != "
-                              "'refs/heads/main' }}", t)
+                              "-${{ github.ref }}${{ github.ref == 'refs/heads/main' && "
+                              "format('-{0}', github.sha) || '' }}\n  cancel-in-progress: "
+                              "${{ github.ref != 'refs/heads/main' }}", t)
 
     def test_release_still_main_only(self):
         t = self.wf("release.yml")
@@ -142,13 +145,28 @@ class Triggers(unittest.TestCase):
         self.assertIn("BASE=$(git merge-base origin/main HEAD)", job)
         self.assertIn('[ "$REF" != refs/heads/main ]', job)
 
+    def test_changelog_bad_base_fails_in_ci(self):  # 代码质量官 S1
+        job = self.wf("ci.yml").split("\n  changelog:")[1].split("\n  build:")[0]
+        run = job.index("python3 scripts/check-changelog.py")
+        for guard in ('*) echo "::error::base 全 0', 'git cat-file -e "${BASE}^{commit}"',
+                      "算不出和 origin/main 的 merge-base"):
+            self.assertLess(job.index(guard), run)
+        self.assertGreaterEqual(job[:run].count("exit 1"), 3)
+
+    def test_ci_checkouts_drop_credentials(self):  # O3
+        blocks = self.wf("ci.yml").split("uses: actions/checkout@")[1:]
+        self.assertEqual(len(blocks), 3)
+        for b in blocks:
+            self.assertIn("persist-credentials: false", b.split("\n      - ")[0])
+
 
 class CheckWorkflows(unittest.TestCase):
     """check-workflows.py 的规则 5、6（清单 3.16）。"""
     BASE = ("name: x\non:\n  push:\n    branches: ['**']\npermissions:\n  contents: read\n"
             "{conc}jobs:\n  n:\n    {cond}runs-on: ubuntu-latest\n    permissions:\n"
             "      issues: write\n    steps:\n      - run: true\n")
-    CONC = "concurrency:\n  group: g\n"
+    CONC = ("concurrency:\n  group: g${{ github.ref == 'refs/heads/main' && "
+            "format('-{0}', github.sha) || '' }}\n  cancel-in-progress: true\n")
     MAIN = "if: failure() && github.ref == 'refs/heads/main'\n    "
 
     def errs(self, text):
@@ -168,6 +186,27 @@ class CheckWorkflows(unittest.TestCase):
         for cond in ("", "if: failure()\n    "):
             e = self.errs(self.BASE.format(conc=self.CONC, cond=cond))
             self.assertTrue(any("refs/heads/main" in x for x in e), (cond, e))
+
+    def test_group_without_main_sha(self):  # 代码质量官 B1
+        bad = "concurrency:\n  group: g\n  cancel-in-progress: true\n"
+        e = self.errs(self.BASE.format(conc=bad, cond=self.MAIN))
+        self.assertTrue(any("按 SHA 分组" in x for x in e), e)
+
+    def test_group_rule_skips_cancel_false(self):  # release.yml 这类串行队列
+        ok = "concurrency:\n  group: npm-release\n  cancel-in-progress: false\n"
+        self.assertEqual(self.errs(self.BASE.format(conc=ok, cond=self.MAIN)), [])
+
+    def test_main_guard_multiline_and_reversed(self):  # O2
+        for cond in ("if: >-\n      failure() &&\n      github.ref == 'refs/heads/main'\n    ",
+                     "if: failure() && 'refs/heads/main' == github.ref\n    ",
+                     'if: ${{ failure() && github.ref == "refs/heads/main" }}\n    '):
+            with self.subTest(cond=cond):
+                self.assertEqual(self.errs(self.BASE.format(conc=self.CONC, cond=cond)), [])
+
+    def test_main_guard_wrong_branch(self):
+        cond = "if: failure() && github.ref == 'refs/heads/dev'\n    "
+        e = self.errs(self.BASE.format(conc=self.CONC, cond=cond))
+        self.assertTrue(any("refs/heads/main" in x for x in e), e)
 
     def test_repo_workflows_pass(self):
         for f in sorted((ROOT / ".github/workflows").glob("*.yml")):

@@ -10,7 +10,11 @@
    docker://...@sha256: 除外。
 5. 有 push 触发的 workflow 必须有顶层 concurrency（清单 3.16：分支推送多，旧运行要取消）。
 6. 有 issues: write 的 job，if 里必须带 github.ref == 'refs/heads/main'
-   （只在 main 上开 issue，功能分支失败不开）。
+   （只在 main 上开 issue，功能分支失败不开）。认单行、>- / | 多行写法，以及等号两边
+   反过来写、单双引号、${{ }} 包裹的形式。
+7. 有 push 触发、cancel-in-progress 不是字面 false 的 workflow，concurrency group 必须在
+   main 上按 SHA 分组：含 github.ref == 'refs/heads/main' && format('-{0}', github.sha)，
+   否则 main 上排队中的运行会被后来的推送顶掉（代码质量官 B1）。
 
 不依赖 PyYAML：按缩进解析，只认本仓 workflow 用到的写法。
 用法：check-workflows.py [workflow 目录]，默认 .github/workflows。
@@ -21,6 +25,10 @@ import sys
 
 SHA_RE = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s*(?:-\s+)?uses:\s*([^\s#]+)\s*(#.*)?$")
+_MAIN = r"['\"]refs/heads/main['\"]"
+MAIN_REF = re.compile(rf"github\.ref\s*==\s*{_MAIN}|{_MAIN}\s*==\s*github\.ref")
+MAIN_SHA_GROUP = re.compile(r"github\.ref\s*==\s*'refs/heads/main'\s*&&\s*"
+                            r"format\(\s*'-\{0\}'\s*,\s*github\.sha\s*\)")
 
 
 def indent(line):
@@ -46,6 +54,14 @@ def block(lines, start, base):
     return out
 
 
+def if_text(lines, i, base):
+    """job 级 if: 的完整内容：单行，或 >- / | 等块标量的后续缩进行。"""
+    head = strip_comment(lines[i]).split(":", 1)[1].strip()
+    if head and head[0] not in ">|":
+        return head
+    return " ".join(s.strip() for _, s in block(lines, i, base))
+
+
 def perm_map(lines, i, base):
     """解析 permissions: 的值（映射或标量），返回 dict 或字符串。"""
     head = strip_comment(lines[i]).split(":", 1)[1].strip()
@@ -67,6 +83,7 @@ def check(path):
     jobs_line = None
     on_line = None
     has_concurrency = False
+    conc_line = None
     for i, raw in enumerate(lines):
         s = strip_comment(raw)
         if not s.strip():
@@ -81,6 +98,7 @@ def check(path):
                 on_line = i
             elif key == "concurrency":
                 has_concurrency = True
+                conc_line = i
         if re.search(r"\bpull_request_target\b", s):
             err(i, "禁止 pull_request_target 触发")
         m = USES_RE.match(s if "#" not in raw else raw)
@@ -107,8 +125,16 @@ def check(path):
         events = {s.strip().split(":", 1)[0] for _, s in block(lines, on_line, 0)
                   if indent(s) == 2}
         head = strip_comment(lines[on_line]).split(":", 1)[1]
-        if ("push" in events or re.search(r"\bpush\b", head)) and not has_concurrency:
+        has_push = "push" in events or bool(re.search(r"\bpush\b", head))
+        if has_push and not has_concurrency:
             err(on_line, "有 push 触发但缺少顶层 concurrency")
+        if has_push and conc_line is not None:
+            conc = {s.strip().split(":", 1)[0]: s.split(":", 1)[1].strip()
+                    for _, s in block(lines, conc_line, 0) if ":" in s}
+            if conc.get("cancel-in-progress", "") != "false" and not MAIN_SHA_GROUP.search(
+                    conc.get("group", "")):
+                err(conc_line, "concurrency group 必须在 main 上按 SHA 分组（加 ${{ github.ref == "
+                               "'refs/heads/main' && format('-{0}', github.sha) || '' }}）")
 
     if jobs_line is not None:
         job_rows = [(i, s) for i, s in block(lines, jobs_line, 0)]
@@ -125,8 +151,8 @@ def check(path):
                     err(keys["permissions"],
                         f"job {name} 有 id-token 权限但没挂 environment（只有发布 job 可以）")
                 if isinstance(p, dict) and p.get("issues") == "write":
-                    cond = strip_comment(lines[keys["if"]]) if "if" in keys else ""
-                    if "github.ref == 'refs/heads/main'" not in cond:
+                    cond = if_text(lines, keys["if"], job_indent + 2) if "if" in keys else ""
+                    if not MAIN_REF.search(cond):
                         err(keys["permissions"],
                             f"job {name} 有 issues: write，if 里必须限定 github.ref == 'refs/heads/main'")
     return errs

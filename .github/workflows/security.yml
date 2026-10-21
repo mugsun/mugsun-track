@@ -11,9 +11,10 @@ on:
     - cron: '17 1 * * *' # 每天 09:17（北京时间）
   workflow_dispatch:
 
-# 同一分支有新推送时取消旧运行；main 上不取消，每次推送都要完整跑完（gate audit 逐次比对 before）
+# 同一分支有新推送时取消旧运行。main 上每个 SHA 单独一组、也不取消，连推多次时排队中的运行
+# 不会被后来的推送顶掉，每次推送都要完整跑完（gate audit 逐次比对 before）
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -112,7 +113,7 @@ jobs:
   # 脚本只吃 --base 参数，以后可原样搬进 mugsun/.github 的 reusable workflow。
   gate-audit:
     name: gate audit
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -127,9 +128,9 @@ jobs:
           REF: ${{ github.ref }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          # 功能分支 push（清单 3.16）：不用 before，改和 origin/main 的 merge-base 比；
-          # 算不出来（没有共同祖先、origin/main 不存在）就判红。main 和 PR 的规则不变。
-          if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then
+          # 功能分支 push（清单 3.16）和手动触发：不用 before，改和 origin/main 的 merge-base 比；
+          # 算不出来（没有共同祖先、origin/main 不存在）就判红。main 上的 push 和 PR 规则不变。
+          if [ "$EVENT" = workflow_dispatch ] || { [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; }; then
             if ! BASE_SHA=$(git merge-base origin/main HEAD); then
               echo "::error::算不出和 origin/main 的 merge-base，无法审计门禁改动"
               exit 1
