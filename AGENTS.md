@@ -38,7 +38,7 @@
 
 ## 发布
 
-`CONTRIBUTING.md` 的发版说明已过时（版本号、走 PR、未提审批与 SBOM），**待更新**；以本节和 `.github/workflows/release.yml` 为准。
+`CONTRIBUTING.md` 有面向贡献者的中英文发版说明；以本节和 `.github/workflows/release.yml` 为准。
 
 - 改 `package.json` 的 `version`（同时手工同步 `SDK_VERSION`）并推入 `main`，会触发 Release workflow；也可手动 `workflow_dispatch`。共三个 job：
   1. `check`：不挂 environment，跑 `scripts/release-check.sh`。版本已在 npm 上则 `skip=true`，整个 run 绿色跳过；只有 E404 算未发布，其他错误直接失败；版本须是规范 semver 且严格大于 npm latest；带 `-` 的版本发到 `next`，否则 `latest`。
