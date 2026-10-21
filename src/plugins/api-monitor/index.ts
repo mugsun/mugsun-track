@@ -64,10 +64,20 @@ const CREDENTIAL_SEGMENT_RE = /(^|\/)(login|signin|sign-in|logout|token|sso|cas)
 const CREDENTIAL_COMBO_RE = /(send|get|resend|check|verify|validate)(sms|otp|smscode|mobilecode|phonecode|emailcode|msgcode)/
 
 /**
- * 令牌接口：路径小写并去掉 - _ 后子串匹配，/getToken、/refresh-token、/api/get_access_token、
- * /getAuthToken、/getIdToken、/issueToken、/exchangeToken 都算。已知误伤：/getTokenList
+ * 令牌接口：先在原始大小写的路径上按驼峰拆词，再小写、把 - _ 换成空格（tokenWords），然后：
+ * - 动词必须在词首：get / refresh / renew / issue / exchange，可选中间词 access / auth / id / session / csrf / user，再接 token。
+ *   /getToken、/refresh-token、/api/get_access_token、/getSessionToken 命中；
+ *   /forgetToken、/budgetTokenUsage、/widget_token 的 get 不在词首，不命中。
+ * - 名词在前：token 在词首，后接 exchange / refresh，如 /tokenExchange、/token-refresh。
+ * 已知误伤：/getTokenizer、/getTokenFee、/getAuthTokenConfig、/getTokenStats、/getTokenList 这类以令牌接口开头的普通接口
  */
-const CREDENTIAL_TOKEN_COMBO_RE = /(get|refresh|renew|issue|exchange)(access|auth|id)?token/
+const CREDENTIAL_TOKEN_VERB_RE = /(^|[^a-z])(get|refresh|renew|issue|exchange) ?(access|auth|id|session|csrf|user)? ?token/
+const CREDENTIAL_TOKEN_NOUN_RE = /(^|[^a-z])token ?(exchange|refresh)/
+
+/** 驼峰拆词 + 小写 + - _ 换空格：getAccessToken → get access token，refresh_token → refresh token */
+function tokenWords(pathname: string): string {
+  return pathname.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().replace(/[-_]/g, ' ')
+}
 
 /** 子串匹配（够长、几乎不会误伤）：/getCaptcha、/user/verifyCode、/api/verificationCodeCheck 都命中 */
 const CREDENTIAL_PATH_SUBSTRINGS = ['captcha', 'verifycode', 'verificationcode']
@@ -87,7 +97,8 @@ export function isCredentialPath(pathname: string): boolean {
     CREDENTIAL_PATH_PARTS.some((part) => p.includes(part)) ||
     CREDENTIAL_SEGMENT_RE.test(p) ||
     CREDENTIAL_COMBO_RE.test(p) ||
-    CREDENTIAL_TOKEN_COMBO_RE.test(p.replace(/[-_]/g, '')) ||
+    CREDENTIAL_TOKEN_VERB_RE.test(tokenWords(pathname)) ||
+    CREDENTIAL_TOKEN_NOUN_RE.test(tokenWords(pathname)) ||
     CREDENTIAL_PATH_SUBSTRINGS.some((part) => p.includes(part)) ||
     p.split(/[^a-z]+/).some((w) => CREDENTIAL_WORDS.has(w))
   )

@@ -200,17 +200,27 @@ const isSensitiveUrlKey = (key: string): boolean => {
   return SENSITIVE_KEYS.has(k) || URL_ONLY_SENSITIVE_KEYS.has(k)
 }
 
-/** 对 `k=v&k2=v2` 形式的参数串做敏感键替换；返回 null 表示未命中 */
+/**
+ * 对 `k=v&k2=v2` 形式的参数串做敏感键替换；返回 null 表示未命中。
+ * 按 & 切分，只替换命中键的值，其他参数逐字保留（不经 URLSearchParams 重新编码，%20、/ 不变）
+ */
 function redactParamString(qs: string): string | null {
-  const params = new URLSearchParams(qs)
   let changed = false
-  for (const key of Array.from(new Set(params.keys()))) {
-    if (isSensitiveUrlKey(key)) {
-      params.set(key, '***')
-      changed = true
+  const parts = qs.split('&').map((part) => {
+    const eq = part.indexOf('=')
+    const rawKey = eq >= 0 ? part.slice(0, eq) : part
+    if (!rawKey) return part
+    let key = rawKey
+    try {
+      key = decodeURIComponent(rawKey.replace(/\+/g, ' '))
+    } catch {
+      // 非法转义：按原文比较
     }
-  }
-  return changed ? params.toString() : null
+    if (!isSensitiveUrlKey(key)) return part
+    changed = true
+    return `${rawKey}=***`
+  })
+  return changed ? parts.join('&') : null
 }
 
 /**
@@ -229,15 +239,15 @@ function redactHash(hash: string): string | null {
   return r === null ? null : `#${r}`
 }
 
-/**
- * 剥离 URL 查询串与 hash 参数中的敏感键值（normalizeKey 归一，忽略大小写与 -、_）。
- * 非法 URL 原样返回；无参数不动；命中键的值替换为 ***（与 api-body 脱敏口径一致）。
- */
 /** endpoint 归一：去首尾空白与末尾所有斜杠，避免拼出 //track/collect、//track/config */
 export function normalizeEndpoint(endpoint: string): string {
   return String(endpoint).trim().replace(/\/+$/, '')
 }
 
+/**
+ * 剥离 URL 中的敏感信息（键名经 normalizeKey 归一，忽略大小写与 -、_）：userinfo、路径参数、查询串与 hash 参数。
+ * 无命中原样返回；命中键的值替换为 ***（与 api-body 脱敏口径一致），其他参数逐字保留。
+ */
 export function redactSensitiveUrl(url: string): string {
   // 只改 userinfo、路径参数（;key=v）、查询串和 hash，其余部分（协议、主机、相对路径、// 前缀）逐字保留
   if (typeof url !== 'string' || !url) return url

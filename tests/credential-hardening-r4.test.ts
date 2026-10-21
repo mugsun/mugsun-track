@@ -399,3 +399,39 @@ describe('r6 安全复核', () => {
     expect(Date.now() - t0).toBeLessThan(1000)
   })
 })
+
+describe('r5 质量复核', () => {
+  it.each(['/forgetToken', '/budgetTokenUsage', '/target-token/list', '/widget_token', '/v1/budget-token', '/tokens/stats'])(
+    '令牌接口 %s 不命中',
+    (p) => expect(isCredentialPath(p)).toBe(false)
+  )
+  it.each([
+    '/getToken',
+    '/api/refreshToken',
+    '/renewAccessToken',
+    '/getAccessToken',
+    '/refresh-token',
+    '/refresh_token',
+    '/get-token',
+    '/api/get_access_token',
+    '/getAuthToken',
+    '/getIdToken',
+    '/issueToken',
+    '/exchangeToken',
+    '/tokenExchange',
+    '/token-refresh',
+    '/getSessionToken',
+    '/getCsrfToken',
+    '/getUserToken'
+  ])('令牌接口 %s 命中', (p) => expect(isCredentialPath(p)).toBe(true))
+  it.each(['/getTokenizer', '/order/getTokenFee', '/getAuthTokenConfig', '/tenant/getTokenStats'])(
+    '已知误伤（记在 CHANGELOG）：%s 仍命中',
+    (p) => expect(isCredentialPath(p)).toBe(true)
+  )
+  it('查询串其他参数逐字保留，不重新编码', () => {
+    expect(redactSensitiveUrl('/s?q=a%20b&path=/x/y&token=t&n=1+2')).toBe('/s?q=a%20b&path=/x/y&token=***&n=1+2')
+    expect(redactSensitiveUrl('/s?acc%65ss_token=t&a')).toBe('/s?acc%65ss_token=***&a')
+    expect(redactSensitiveUrl('/s?token&x=1')).toBe('/s?token=***&x=1')
+    expect(redactSensitiveUrl('/s?token=a&token=b')).toBe('/s?token=***&token=***')
+  })
+})
