@@ -78,6 +78,10 @@
 
 - CONTRIBUTING 补充发版流程（改版本号 + CHANGELOG → 合入 main → release.yml 自动发布），中英双语
 
+### 发版流程
+
+- Release 工作流拆成两个 job。`check` 只读检查，不需要审批：只有 `npm error code E404` 才算版本未发布，其他错误直接失败；版本号用 semver@7.6.3 校验，且必须严格大于 npm latest。`publish` 只在 main 上运行，挂 `npm-release` 环境（需维护者审批）；预发布版本用 `--tag next` 发布。
+
 ## [0.2.0] - 2026-10-13
 
 ### 变更

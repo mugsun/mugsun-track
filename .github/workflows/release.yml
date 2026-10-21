@@ -8,34 +8,53 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: npm-release
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish to npm when version changes
+  # 只读检查，不挂 environment：版本已发布时整个 run 直接绿色跳过，不需要审批
+  check:
+    name: Check whether version is already published
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # 不开 setup-node 的 pnpm 缓存：跳过发版时不装依赖、缓存目录不存在，post 步骤会报错让整个 run 变红
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      # 只有 E404 算「未发布」，其他 npm 错误让 job 失败；未发布时要求版本严格大于 npm latest
+      - name: Check version
+        id: check
+        run: bash scripts/release-check.sh
+
+  # 真正发布：只在 main 上、版本未发布时运行，挂 npm-release 环境（需 mugsun 审批，只允许 main 分支）
+  publish:
+    name: Publish to npm
+    needs: check
+    if: github.ref == 'refs/heads/main' && needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        # 不开 setup-node 的 pnpm 缓存：跳过发版时不装依赖、缓存目录不存在，post 步骤会报错让整个 run 变红
         with:
           node-version: '24'
-      # 只有 E404 算「未发布」，其他 npm 错误让 job 失败；未发布时要求版本严格大于 npm latest
-      - name: Check whether version is already published
-        id: check
-        run: bash scripts/release-check.sh
-      - if: steps.check.outputs.skip == 'false'
-        run: pnpm install --frozen-lockfile
-      - if: steps.check.outputs.skip == 'false'
-        run: pnpm typecheck && pnpm test && pnpm build
-      - if: steps.check.outputs.skip == 'false'
-        name: Upgrade npm (trusted publishing needs npm >= 11.5.1)
-        run: npm install -g npm@^11.5.1
-      - if: steps.check.outputs.skip == 'false'
-        name: Publish via npm trusted publishing (OIDC, no token)
-        run: npm publish --provenance --access public
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm test && pnpm build
+      - name: Upgrade npm (trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@11.21.1
+      - name: Publish via npm trusted publishing (OIDC, no token)
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+        run: npm publish --provenance --access public --tag "$TAG"
