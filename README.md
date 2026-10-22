@@ -17,7 +17,7 @@
 | 项 | 说明 |
 | --- | --- |
 | 包名 | `@mugsun/track-web` |
-| 版本 | `0.2.0`（npm `@mugsun/track-web@0.2.0` 已发布） |
+| 版本 | `0.3.0`（npm `@mugsun/track-web@0.3.0` 已发布） |
 | 运行时 | 浏览器；Node.js ≥ 22.13、pnpm ≥ 11.11（构建与测试，见 package.json `engines` / `packageManager`） |
 | 许可 | [MIT](./LICENSE) |
 | 文档 | [docs.mugsun.com/track](https://docs.mugsun.com/track/) |
