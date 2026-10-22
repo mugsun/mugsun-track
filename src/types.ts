@@ -143,7 +143,7 @@ export interface TrackOptions {
   retryMaxDelay?: number
   /** 尊重 Do Not Track，默认 true */
   respectDnt?: boolean
-  /** 尊重 Global Privacy Control（navigator.globalPrivacyControl），默认 true，与 respectDnt 一致 */
+  /** 尊重 Global Privacy Control（navigator.globalPrivacyControl），默认 false；设 true 时 GPC 开启即停用 */
   respectGpc?: boolean
   /** 自动采集屏蔽选择器（与远端下发合并） */
   maskSelectors?: string[]

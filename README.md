@@ -71,7 +71,7 @@ app.use(MugsunTrack, { endpoint, appKey, router })
 
 `appKey` 在浏览器端可见，不具备机密性。服务端须通过存在性校验、限流、队列背压与事件校验实施防护。
 
-隐私默认项：尊重 DNT 与 Global Privacy Control（`respectDnt` / `respectGpc`）；提供 `optOut()` / `optIn()`；自动采集的点击、change 等事件不带 `input` / `textarea` 的 `value`（回放里的输入值由 `maskAllInputs` 决定，见下文）；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认显示页面文本和输入框的原值（需要遮罩时传 `maskTextSelector: '*'` 或更窄的选择器、`maskAllInputs: true`），密码框、`data-track-mask` 区域、银行卡（`autocomplete=cc-*`）与一次性验证码（`autocomplete=one-time-code`）字段始终不录；`apiBodyMaskEnabled` 默认关闭：响应体里的凭证类键（`token`、`access_token`、`refresh_token`、`password`、`secret`、`cookie` 等）始终替换为 `***`，手机号、邮箱、身份证号等个人信息默认原文上传，需要脱敏时设 `true`。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
+隐私默认项：尊重 DNT（`respectDnt`）；Global Privacy Control 默认不看，设 `respectGpc: true` 才尊重；提供 `optOut()` / `optIn()`；自动采集的点击、change 等事件不带 `input` / `textarea` 的 `value`（回放里的输入值由 `maskAllInputs` 决定，见下文）；对 `password` 及 `maskSelectors` 命中区域屏蔽。回放默认显示页面文本和输入框的原值（需要遮罩时传 `maskTextSelector: '*'` 或更窄的选择器、`maskAllInputs: true`），密码框、`data-track-mask` 区域、银行卡（`autocomplete=cc-*`）与一次性验证码（`autocomplete=one-time-code`）字段始终不录；`apiBodyMaskEnabled` 默认关闭：响应体里的凭证类键（`token`、`access_token`、`refresh_token`、`password`、`secret`、`cookie` 等）始终替换为 `***`，手机号、邮箱、身份证号等个人信息默认原文上传，需要脱敏时设 `true`。接口监控上报 URL 会剥离敏感 query（如 `token` / `access_token` 等，值替换为 `***`）。细则见 [隐私与合规](https://docs.mugsun.com/track/privacy)。
 
 构建门禁：`dist/core.js` gzip 体积不超过 8 KB；当前发布说明中的 core 体积约为 6.3 KB gzip。
 

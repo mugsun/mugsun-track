@@ -25,7 +25,7 @@ export function resolveOptions(options: TrackOptions): ResolvedTrackOptions {
     retryBaseDelay: options.retryBaseDelay ?? 1000,
     retryMaxDelay: options.retryMaxDelay ?? 30000,
     respectDnt: options.respectDnt ?? true,
-    respectGpc: options.respectGpc ?? true,
+    respectGpc: options.respectGpc ?? false,
     maskSelectors: [...(options.maskSelectors ?? [])],
     replayEnabled: options.replayEnabled ?? false,
     replaySampleRate: options.replaySampleRate ?? 10,

@@ -96,8 +96,16 @@ describe('凭证端点：注册、找回/修改密码、OTP/短信/验证码/MFA
 })
 
 describe('Global Privacy Control', () => {
-  it('respectGpc 默认 true：GPC 开启时不采集，selfCheck consent 提示', async () => {
+  it('respectGpc 默认 false：未设置时 GPC 开启也照常采集', async () => {
     const t = createTestClient({}, { isGpc: () => true })
+    expect(t.client.options.respectGpc).toBe(false)
+    t.client.track('default_event')
+    await t.client.flush()
+    expect(allEvents(t.sent).map((e) => e.event)).toContain('default_event')
+  })
+
+  it('respectGpc=true：GPC 开启时不采集，selfCheck consent 提示', async () => {
+    const t = createTestClient({ respectGpc: true }, { isGpc: () => true })
     expect(t.client.options.respectGpc).toBe(true)
     t.client.track('gpc_event')
     await t.client.flush()
@@ -107,7 +115,7 @@ describe('Global Privacy Control', () => {
     expect(c?.message).toContain('Global Privacy Control')
   })
 
-  it('respectGpc=false 时忽略 GPC（与 respectDnt=false 同理）', async () => {
+  it('显式 respectGpc=false 时忽略 GPC', async () => {
     const t = createTestClient({ respectGpc: false }, { isGpc: () => true })
     t.client.track('ok_event')
     await t.client.flush()
