@@ -4,11 +4,33 @@
 
 ## [Unreleased]
 
-> 计划版本：**0.3.0**（minor，含下方行为变更）。本 PR 不改 `package.json` 版本号，避免合入即触发自动发布；发版另走版本 PR。
+## [0.3.0] - 2026-10-22
 
-> **升级提示**：如果你靠 0.2.0 的默认遮罩满足合规要求，升级后必须显式配置 `replayPlugin({ maskTextSelector: '*', maskAllInputs: true })` 和 `apiBodyMaskEnabled: true`，否则回放会录页面文本和输入框的原值，响应体里的个人信息字段会原文上传。
->
-> 注意远端配置：mugsun-boot 的 `track_app.api_body_mask_enabled` 默认是 `0`，`/track/config` 会下发 `apiBodyMaskEnabled: false`。本地没有设置 `apiBodyMaskEnabled` 时，SDK 用远端值（下次启动生效），所以即使在 0.2.0，开了远端配置的应用实际也不脱敏。想确保脱敏，就在本地显式设 `apiBodyMaskEnabled: true`（本地显式设置优先于远端），或在管理后台打开「响应体脱敏」。
+### 升级说明
+
+0.3.0 改了隐私相关默认值，从 0.2.0 升级前请先看这一节。
+
+- 会话回放默认录页面文本原文（0.2.0 默认遮罩全部文本）。
+- 会话回放默认录输入框原值（0.2.0 固定遮罩为 `***`）。
+- `apiBodyMaskEnabled` 默认 `false`：响应体里的个人信息字段原文上传。
+  - 0.2.0 默认 `true`。凭证类键（token、password 等）仍始终脱敏。
+- `skipHandledErrors` 默认 `false`，所有错误照常上报，与 0.2.0 一致。
+  - 0.2.0 没有这个选项；想跳过已处理错误再设 `true`。
+- 远端配置：mugsun-boot 默认下发 `apiBodyMaskEnabled: false`。
+  - 本地显式设置优先于远端，要确保脱敏请在本地写明。
+
+要保留 0.2.0 的遮罩行为，升级后显式配置：
+
+```ts
+createTracker({
+  // ...其他配置
+  apiBodyMaskEnabled: true, // 个人信息字段替换为 ***
+  plugins: [
+    ...defaultPlugins(), // 传了 plugins 就不再自动带默认插件
+    replayPlugin({ maskTextSelector: '*', maskAllInputs: true }),
+  ],
+})
+```
 
 ### 行为变更
 
