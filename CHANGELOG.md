@@ -16,12 +16,17 @@
   - 0.2.0 默认 `true`。凭证类键（token、password 等）仍始终脱敏。
 - `skipHandledErrors` 默认 `false`，所有错误照常上报，与 0.2.0 一致。
   - 0.2.0 没有这个选项；想跳过已处理错误再设 `true`。
+- `respectGpc` 新选项默认 `true`：浏览器开启 GPC 时 SDK 停用（0.2.0 不看 GPC）。
+  - 要保持 0.2.0 的采集范围，设 `respectGpc: false`。
 - 远端配置：mugsun-boot 默认下发 `apiBodyMaskEnabled: false`。
   - 本地显式设置优先于远端，要确保脱敏请在本地写明。
 
 要保留 0.2.0 的遮罩行为，升级后显式配置：
 
 ```ts
+import { createTracker, defaultPlugins } from '@mugsun/track-web'
+import { replayPlugin } from '@mugsun/track-web/replay'
+
 createTracker({
   // ...其他配置
   apiBodyMaskEnabled: true, // 个人信息字段替换为 ***
