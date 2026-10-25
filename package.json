@@ -84,7 +84,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "happy-dom": "^20.11.1",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.9.6",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",

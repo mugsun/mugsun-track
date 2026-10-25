@@ -13,8 +13,8 @@ importers:
         version: 2.1.1
     devDependencies:
       happy-dom:
-        specifier: ^20.11.1
-        version: 20.11.1
+        specifier: ^21.0.4
+        version: 21.0.4
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
@@ -26,7 +26,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.10
-        version: 4.1.12(@types/node@26.1.2)(happy-dom@20.11.1)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.27.7))
+        version: 4.1.12(@types/node@26.1.2)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.27.7))
       vue:
         specifier: ^3.5.41
         version: 3.5.44(typescript@5.9.3)
@@ -662,8 +662,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  happy-dom@20.11.1:
-    resolution: {integrity: sha512-XSt8tMzbW9ymE7687xztkO1ckR7qJNQ3LywY9vlYGhGi3zXrGBHuUo2Cl1ztZaICW+1eAGdkLbj6iwVqDT33kg==}
+  happy-dom@21.0.4:
+    resolution: {integrity: sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw==}
     engines: {node: '>=20.0.0'}
 
   joycon@3.1.1:
@@ -1512,7 +1512,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  happy-dom@20.11.1:
+  happy-dom@21.0.4:
     dependencies:
       '@types/node': 26.1.2
       '@types/whatwg-mimetype': 3.0.2
@@ -1812,7 +1812,7 @@ snapshots:
       esbuild: 0.27.7
       fsevents: 2.3.3
 
-  vitest@4.1.12(@types/node@26.1.2)(happy-dom@20.11.1)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.27.7)):
+  vitest@4.1.12(@types/node@26.1.2)(happy-dom@21.0.4)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.27.7)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@8.3.4(@types/node@26.1.2)(esbuild@0.27.7))
@@ -1836,7 +1836,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 26.1.2
-      happy-dom: 20.11.1
+      happy-dom: 21.0.4
     transitivePeerDependencies:
       - msw
 
