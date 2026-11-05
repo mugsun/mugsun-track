@@ -36,6 +36,8 @@ import { createTracker } from '@mugsun/track-web'
 const track = createTracker({
   endpoint: 'https://example.com', // posts to {endpoint}/track/collect
   appKey: 'your-app-key',
+  // App version on $error (and common props); inject at build time
+  release: import.meta.env.VITE_APP_VERSION, // Vite; or process.env.npm_package_version / a CI env var
 })
 
 track.track('button_click', { name: 'buy' })
@@ -45,8 +47,15 @@ Vue 3:
 
 ```ts
 import MugsunTrack from '@mugsun/track-web/vue'
-app.use(MugsunTrack, { endpoint, appKey, router })
+app.use(MugsunTrack, {
+  endpoint,
+  appKey,
+  router,
+  release: import.meta.env.VITE_APP_VERSION,
+})
 ```
+
+`release` is optional. When omitted it is not sent; when set, window error / unhandledrejection / Vue `errorHandler` `$error` events carry it so issue tickets can group by version. Use `import.meta.env.VITE_*` (Vite), `process.env.*` (Webpack/Node), or a CI-injected build env var. Full options: [Install & setup](https://docs.mugsun.com/en/track/install).
 
 End-to-end steps from an empty environment to the first dashboard event: [Documentation · First event](https://docs.mugsun.com/en/track/first-event).
 

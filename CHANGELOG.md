@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Docs
+
+- README 中英补充 `release` 传法与构建注入示例（Vite `import.meta.env` / `process.env` / CI）
+
 ## [0.3.0] - 2026-10-22
 
 ### 升级说明

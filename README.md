@@ -36,6 +36,8 @@ import { createTracker } from '@mugsun/track-web'
 const track = createTracker({
   endpoint: 'https://example.com', // 实际上报 {endpoint}/track/collect
   appKey: 'your-app-key',          // 管理端「埋点分析 → 接入管理」创建
+  // 应用版本，错误事件（$error / Vue errorHandler）与公共属性会携带；建议构建注入
+  release: import.meta.env.VITE_APP_VERSION, // Vite；也可 process.env.npm_package_version / CI 环境变量
 })
 
 track.track('button_click', { name: 'buy' })
@@ -45,8 +47,15 @@ Vue 3：
 
 ```ts
 import MugsunTrack from '@mugsun/track-web/vue'
-app.use(MugsunTrack, { endpoint, appKey, router })
+app.use(MugsunTrack, {
+  endpoint,
+  appKey,
+  router,
+  release: import.meta.env.VITE_APP_VERSION,
+})
 ```
+
+`release` 可选。未配置时不上报该字段；配置后 window error / unhandledrejection / Vue `errorHandler` 的 `$error` 都会带上，便于问题单按版本关联。Vite 用 `import.meta.env.VITE_*`，Webpack/Node 用 `process.env.*`，或在 CI 里写入构建环境变量。配置项说明见 [安装与初始化](https://docs.mugsun.com/track/install)。
 
 从空环境到看板可见首条事件的完整步骤，见 [文档 · 第一个事件](https://docs.mugsun.com/track/first-event)。
 
