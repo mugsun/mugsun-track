@@ -1,30 +1,18 @@
-![mugsun-track](https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/banners/repos/mugsun-track-en.png)
-
 # @mugsun/track-web
 
-[简体中文](./README.md) | English
-
-This repository publishes a browser analytics SDK. Collection, storage, and dashboards may be deployed in a self-managed environment. The default ingest path is [mugsun-boot](https://github.com/mugsun/mugsun-boot) `/track/collect`.
-
-[Documentation](https://docs.mugsun.com/en/track/) · [First event](https://docs.mugsun.com/en/track/first-event) · [npm](https://www.npmjs.com/package/@mugsun/track-web)
+[中文](./README.md) | [Docs](https://docs.mugsun.com/en/track/) | [Changelog](./CHANGELOG.md)
 
 [![npm](https://img.shields.io/npm/v/@mugsun/track-web)](https://www.npmjs.com/package/@mugsun/track-web)
-[![core gzip](https://img.shields.io/badge/core_gzip-~6.3KB-blue)](#composition)
+[![CI](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-## Overview
+The browser tracking SDK of mugsun. It collects page views, clicks, performance metrics and JavaScript errors and sends them to a [mugsun-boot](https://github.com/mugsun/mugsun-boot) that you host yourself.
 
-| Item | Detail |
-| --- | --- |
-| Package | `@mugsun/track-web` |
-| Version | `0.3.0` (published on npm as `@mugsun/track-web@0.3.0`) |
-| Runtime | Browser; Node.js ≥ 22.13 and pnpm ≥ 11.11 for build and test (see `engines` / `packageManager` in package.json) |
-| License | [MIT](./LICENSE) |
-| Docs | [docs.mugsun.com/en/track](https://docs.mugsun.com/en/track/) |
+Collection, storage and analysis all stay on your own servers. Below is session replay in the admin console.
 
-The SDK provides a plugin core for pageview, page leave, autocapture, exposure, Web Vitals, and error collection. Session replay, visual tagging, API monitoring, and geo plugins are registered explicitly and are not part of the default first-load bundle.
+![The session replay page](https://docs.mugsun.com/readme/track-replay-en.png)
 
-## Deployment
+## Install
 
 ```bash
 pnpm add @mugsun/track-web
@@ -34,120 +22,153 @@ pnpm add @mugsun/track-web
 import { createTracker } from '@mugsun/track-web'
 
 const track = createTracker({
-  endpoint: 'https://example.com', // posts to {endpoint}/track/collect
-  appKey: 'your-app-key',
-  // App version on $error (and common props); inject at build time
-  release: import.meta.env.VITE_APP_VERSION, // Vite; or process.env.npm_package_version / a CI env var
+  endpoint: 'https://your-host', // where mugsun-boot runs; no path needed
+  appKey: 'your-app-key', // create one under Tracking > Integration in the admin console
+  release: import.meta.env.VITE_APP_VERSION, // optional: your app's version, best injected at build time
 })
 
 track.track('button_click', { name: 'buy' })
 ```
 
-Vue 3:
+Once the tracker is created, page views, clicks and errors are collected automatically. `track.track()` sends events you define yourself.
+
+`release` is optional. When it is set, error events carry the version, and error issues in the admin console can be filtered by it.
+
+Read the version from `import.meta.env.VITE_*` in Vite or from `process.env.*` in Webpack. CI can set the value.
+
+Events show up under Tracking > Event Analysis in the admin console. The full walkthrough is in [First event](https://docs.mugsun.com/en/track/first-event).
+
+If nothing shows up, run the self-check in the browser console. It goes through the setup item by item and suggests a fix for each problem:
+
+```ts
+const report = await track.selfCheck()
+console.table(report.items)
+```
+
+### With Vue 3
 
 ```ts
 import MugsunTrack from '@mugsun/track-web/vue'
-app.use(MugsunTrack, {
-  endpoint,
-  appKey,
-  router,
-  release: import.meta.env.VITE_APP_VERSION,
-})
+
+app.use(router)
+app.use(MugsunTrack, { endpoint, appKey, router, release })
 ```
 
-`release` is optional. When omitted it is not sent; when set, window error / unhandledrejection / Vue `errorHandler` `$error` events carry it so issue tickets can group by version. Use `import.meta.env.VITE_*` (Vite), `process.env.*` (Webpack/Node), or a CI-injected build env var. Full options: [Install & setup](https://docs.mugsun.com/en/track/install).
+With `router` passed in, page events are grouped by route pattern, such as `/order/:id`. Templates can use `$track` and the directive:
 
-End-to-end steps from an empty environment to the first dashboard event: [Documentation · First event](https://docs.mugsun.com/en/track/first-event).
+```vue
+<button v-track:click="'buy_click'">Buy</button>
+<div v-track:exposure="{ event: 'banner_view', props: { id: 3 } }">Banner</div>
+```
 
-## Composition
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/mugsun/mugsun-docs/main/public/brand/arch/track-iso-en.jpg" alt="Data flow diagram" width="100%" />
-</p>
-
-| Export | Purpose |
-| --- | --- |
-| `@mugsun/track-web` | Main entry: `createTracker`, default plugins |
-| `@mugsun/track-web/core` | Core logic without DOM adapters |
-| `@mugsun/track-web/vue` | Vue 3 plugin and directives |
-| `@mugsun/track-web/replay` | Session replay (separate entry) |
-
-Default plugins: `pageview`, `pageleave`, `autocapture`, `exposure`, `web-vitals`, `error`.
-
-Optional plugins (explicit registration): `api-monitor`, `visual-track`, `geo`. Replay loads via the `/replay` entry.
-
-Transport order: `sendBeacon` → `fetch` keepalive → `XHR`. The queue defaults to IndexedDB and retries with exponential backoff after offline periods or reloads. Events carry a stable `event_id` for server-side idempotent handling.
-
-`appKey` is visible in the browser and is not a secret. The server must enforce existence checks, rate limits, queue backpressure, and event validation.
-
-Privacy defaults: honor DNT (`respectDnt`); Global Privacy Control is ignored unless you set `respectGpc: true`; provide `optOut()` / `optIn()`; autocaptured click / change events carry no `input` / `textarea` values (input values in replays follow `maskAllInputs`, see below); mask `password` trees and `maskSelectors` matches. Replay shows page text and input values as-is by default (pass `maskTextSelector: '*'` or a narrower selector, and `maskAllInputs: true`, to mask them); password fields, `data-track-mask` areas, card fields (`autocomplete=cc-*`) and one-time-code fields are never recorded; `apiBodyMaskEnabled` defaults to off: credential keys in response bodies (`token`, `access_token`, `refresh_token`, `password`, `secret`, `cookie`, …) are always replaced with `***`, while personal data such as phone, email and ID numbers is uploaded as-is unless you set it to `true`. API-monitor strips sensitive URL query keys (e.g. `token` / `access_token`, values replaced with `***`). See [Privacy](https://docs.mugsun.com/en/track/privacy).
-
-Build gate: `dist/core.js` gzip size must not exceed 8 KB. Published core size is approximately 6.3 KB gzip.
-
-## Self-check and error filtering
+### Link events to a signed-in user
 
 ```ts
-const tracker = createTracker({
-  endpoint: 'https://api.example.com',
-  appKey: 'your-app-key',
-  // Rewrite props or drop before sending (return null/false to drop); a throwing hook drops the event by default
-  beforeSend: (e) => (e.event === 'debug_only' ? null : e),
-  // Strings match a message substring, RegExps test the message, or a predicate (error, message) => boolean
-  ignoreErrors: ['ResizeObserver loop', /^AbortError/],
-  // Default false (report everything); set true to skip name==='HttpError' and errors flagged handled/expected
-  skipHandledErrors: true
-})
-
-tracker.trackApiError({ url: '/api/order', method: 'POST', status: 200, bizCode: 40001, message: 'Out of stock' })
-
-const report = await tracker.selfCheck()
-console.table(report.items) // each { id, status: 'ok'|'warn'|'fail', message, fix }
+track.identify(user.id) // after sign-in
+track.reset() // after sign-out
 ```
 
-- `beforeSend` merges only the returned object's `props` (`event_id`, `distinct_id` etc. can't be changed); non-object return values mean "unchanged". If the hook throws, the event is **dropped by default** so a broken masking hook can't leak unmasked data; set `beforeSendOnError: 'keep'` to send the original event instead.
-- **Not covered by `beforeSend`**: session events (`$session_start` / `$session_end`), **session replay** chunks and **API response body** uploads. Use `maskTextSelector` / `maskSelectors` for replay and `apiBodyMaskEnabled` (off by default) for bodies.
-- `selfCheck()` makes one real `GET /track/config?app_key=` request (no cookies), sends no user data and enqueues nothing. Messages are in Chinese.
-- `trackApiError` emits an `api_request` event (`success=false`, `source=manual`, with `biz_code`), same shape as `api-monitor`; sensitive query values in `url` (`token`, `access_token`, …) are replaced with `***`.
-- `skipHandledErrors` defaults to `false`: `HttpError` and handled/expected errors are reported as `$error` by default; set it to `true` to skip them.
-- `ignoreErrors` / `skipHandledErrors` apply to the `error` plugin (window error, unhandledrejection) and the Vue `errorHandler`.
-- The collect URL carries `?app_key=` so the server can attribute rejected requests (unparseable or oversized bodies) to the app; see "Integration health" in the admin UI.
-- The self-check implementation is injected by `createTracker` and is not part of the core entry; core-only users inject `deps.selfCheck = runSelfCheck`.
+All methods and options are listed in [Install and initialise](https://docs.mugsun.com/en/track/install).
 
-## Scope
+## What it collects
 
-**Provided**
+| Plugin | Default | Collects |
+| --- | --- | --- |
+| `pageviewPlugin` | on | First load and route changes |
+| `pageleavePlugin` | on | Time spent on a page |
+| `autocapturePlugin` | on | Clicks and other interactions |
+| `exposurePlugin` | on | Element exposure |
+| `webVitalsPlugin` | on | Web Vitals |
+| `errorPlugin` | on | JavaScript errors, failed resource loads and unhandled promise rejections |
+| `apiMonitorPlugin` | off | Method, URL, status code and duration of requests |
+| `replayPlugin` | off | Session replay, built on rrweb |
+| `visualTrack` | off | Events defined by point-and-click rules from the admin console |
+| `geoPlugin` | off | Precise location; triggers the browser's permission prompt |
 
-- Privatizable collection protocol and default backend integration path
-- Lightweight core with optional plugins
-- Offline retry and stable `event_id`
-- Privacy-oriented defaults
+Plugins that are off by default have to be registered in code. See [Plugins](https://docs.mugsun.com/en/track/plugins).
 
-**Not provided**
+The sample rate can be changed on the Integration page of the admin console, and replay and API monitoring are switched there once registered. The SDK fetches these settings at startup, so the frontend needs no new release.
 
-- Hosted public-cloud analytics accounts
-- A publicly accessible demo environment (local verification uses boot + pc; see [Demo](https://docs.mugsun.com/en/demo))
+This is how performance metrics look on the Performance Analysis page:
 
-API fields, plugin options, and configuration keys are defined in the [documentation](https://docs.mugsun.com/en/track/) and source tree.
+![The performance analysis page](https://docs.mugsun.com/readme/track-perf-en.png)
 
-## Related projects
+## Privacy
 
-| Repository | Role |
-| --- | --- |
-| This repository `@mugsun/track-web` | Browser SDK |
-| [mugsun-boot](https://github.com/mugsun/mugsun-boot) | Ingest, config delivery, analytics APIs |
-| [mugsun-pc](https://github.com/mugsun/mugsun-pc) | Access management and analytics console |
-| [mugsun-docs](https://github.com/mugsun/mugsun-docs) | Documentation site [docs.mugsun.com](https://docs.mugsun.com/) |
+The SDK starts collecting as soon as it is created. Read these defaults before you integrate it:
 
-When developing alongside `mugsun-pc`, this repository does not commit `dist/`. Run `pnpm build` first, or use `pnpm setup:sdk` in pc. Application projects should install the published npm package.
+- Do Not Track is respected by default. `optOut()` stops collection and `optIn()` resumes it.
+- Automatically captured clicks never include the value of an input.
+- Replay is off by default. When it is on, page text and input values are recorded as they are. Pass `maskTextSelector` and `maskAllInputs` to mask them.
+- Password fields, card fields and one-time-code fields are never recorded in replay. Neither is any element with the `data-track-mask` attribute.
+- `appKey` is visible in the browser. It only identifies the application and must not be used as a secret.
+
+The full list of behaviours and the compliance advice are in [Privacy](https://docs.mugsun.com/en/track/privacy).
+
+## Offline and page close
+
+- Events are written to IndexedDB first and sent again after a network failure or a reload.
+- When the page is hidden or closed, `sendBeacon` is tried first.
+- Every event has an `event_id`. The server deduplicates by it, so a resend does not create duplicate data.
+
+## Entry points and size
+
+| Entry | Contents | Gzipped |
+| --- | --- | --- |
+| `@mugsun/track-web` | `createTracker` and every plugin except replay | about 20 KB |
+| `@mugsun/track-web/vue` | Vue 3 plugin and directive | about 15 KB |
+| `@mugsun/track-web/core` | Core logic with no DOM dependency | about 7 KB |
+| `@mugsun/track-web/replay` | Session replay, without rrweb | about 6 KB |
+
+rrweb is loaded only when replay is enabled. The build checks the size of `/core` and `/replay` and fails above 8 KB and 6 KB.
+
+## How data flows
+
+```mermaid
+flowchart LR
+    PAGE["Your page<br/>@mugsun/track-web"]
+    BOOT["mugsun-boot<br/>track module"]
+    PG[("PostgreSQL<br/>mugsun_track database")]
+    PC["Admin console<br/>Tracking"]
+
+    PAGE -->|"POST /track/collect"| BOOT
+    BOOT --> PG
+    PC -->|"queries"| BOOT
+```
+
+Tracking data is kept in its own database, `mugsun_track`, apart from the business database.
 
 ## Local development
 
+You need Node.js 22.13+ and pnpm 11.11+.
+
 ```bash
 pnpm install
-pnpm test      # vitest
-pnpm build     # emits dist/; size gate in scripts/report-size.mjs
+pnpm test
+pnpm build
 ```
+
+`pnpm build` prints the size of every file. The release process is in the [contributing guide](./CONTRIBUTING.md).
+
+## Current limits
+
+- Browsers only.
+- It can only report to mugsun-boot. There is no hosted cloud service.
+- Replay does not record canvas.
+- There is no public demo.
+
+## Related repositories
+
+| Repository | What it is |
+| --- | --- |
+| [mugsun-boot](https://github.com/mugsun/mugsun-boot) | The backend. It receives the events and serves the analysis APIs |
+| [mugsun-pc](https://github.com/mugsun/mugsun-pc) | The admin console, with the integration page and the dashboards |
+| [mugsun-docs](https://github.com/mugsun/mugsun-docs) | Source of the documentation site, [docs.mugsun.com](https://docs.mugsun.com/en/) |
+
+## Contributing
+
+Read the [contributing guide](https://github.com/mugsun/.github/blob/main/CONTRIBUTING_EN.md) before you send a change. Report security issues privately as described in [SECURITY.md](https://github.com/mugsun/.github/blob/main/SECURITY.md). Please do not open a public issue.
 
 ## License
 
-[MIT](./LICENSE)
+MIT, see [LICENSE](./LICENSE).
