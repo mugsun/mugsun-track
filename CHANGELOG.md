@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-21
+
+功能与 0.3.0 相同，本次只更新 README 和 `SDK_VERSION`。
+
 ### Docs
 
 - README 中英文重写：安装示例、插件表、隐私默认值和入口体积
@@ -211,6 +215,8 @@ createTracker({
 - 已发布至 npm；当时无 GitHub Release tag
 
 [Unreleased]: https://github.com/mugsun/mugsun-track/commits/main
+[0.3.1]: https://github.com/mugsun/mugsun-track/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/mugsun/mugsun-track/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/mugsun/mugsun-track/compare/3a36902...HEAD
 [0.1.1]: https://github.com/mugsun/mugsun-track/compare/c20fa8b...3a36902
 [0.1.0]: https://github.com/mugsun/mugsun-track/commits/main?since=2026-08-01&until=2026-08-20
