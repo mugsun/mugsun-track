@@ -6,9 +6,9 @@
 [![CI](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-The browser tracking SDK of mugsun. It collects page views, clicks, performance metrics and JavaScript errors and sends them to a [mugsun-boot](https://github.com/mugsun/mugsun-boot) that you host yourself.
+The browser tracking SDK of mugsun. It collects page views, clicks, performance metrics and JavaScript errors and sends them to the mugsun backend: [mugsun-boot](https://github.com/mugsun/mugsun-boot), or its microservice edition, [mugsun-cloud](https://github.com/mugsun/mugsun-cloud).
 
-Collection, storage and analysis all stay on your own servers. Below is session replay in the admin console.
+The data is stored in the backend's tracking database and does not pass through any third-party service. Below is session replay in the admin console.
 
 ![The session replay page](https://docs.mugsun.com/readme/track-replay-en.png)
 
@@ -22,7 +22,7 @@ pnpm add @mugsun/track-web
 import { createTracker } from '@mugsun/track-web'
 
 const track = createTracker({
-  endpoint: 'https://your-host', // where mugsun-boot runs; no path needed
+  endpoint: 'https://your-host', // where the backend runs (the gateway, in the microservice edition); no path needed
   appKey: 'your-app-key', // create one under Tracking > Integration in the admin console
   release: import.meta.env.VITE_APP_VERSION, // optional: your app's version, best injected at build time
 })
@@ -127,7 +127,7 @@ rrweb is loaded only when replay is enabled. The build checks the size of `/core
 ```mermaid
 flowchart LR
     PAGE["Your page<br/>@mugsun/track-web"]
-    BOOT["mugsun-boot<br/>track module"]
+    BOOT["mugsun backend<br/>track module"]
     PG[("PostgreSQL<br/>mugsun_track database")]
     PC["Admin console<br/>Tracking"]
 
@@ -136,7 +136,7 @@ flowchart LR
     PC -->|"queries"| BOOT
 ```
 
-Tracking data is kept in its own database, `mugsun_track`, apart from the business database.
+Tracking data is kept in its own database, `mugsun_track`, apart from the business database. In the microservice edition, the events are received by the track service behind the gateway, on the same paths.
 
 ## Local development
 
@@ -153,7 +153,7 @@ pnpm build
 ## Current limits
 
 - Browsers only.
-- It can only report to mugsun-boot. There is no hosted cloud service.
+- It can only report to a mugsun backend (the monolith or the microservice edition). There is no hosted cloud service.
 - Replay does not record canvas.
 - There is no public demo.
 
@@ -162,6 +162,7 @@ pnpm build
 | Repository | What it is |
 | --- | --- |
 | [mugsun-boot](https://github.com/mugsun/mugsun-boot) | The backend. It receives the events and serves the analysis APIs |
+| [mugsun-cloud](https://github.com/mugsun/mugsun-cloud) | The microservice edition of the backend. Its track service receives the events |
 | [mugsun-pc](https://github.com/mugsun/mugsun-pc) | The admin console, with the integration page and the dashboards |
 | [mugsun-docs](https://github.com/mugsun/mugsun-docs) | Source of the documentation site, [docs.mugsun.com](https://docs.mugsun.com/en/) |
 

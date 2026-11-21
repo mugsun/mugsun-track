@@ -6,9 +6,9 @@
 [![CI](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mugsun/mugsun-track/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-mugsun 的浏览器埋点 SDK。它采集页面浏览、点击、性能指标和 JS 错误，上报到你自己部署的 [mugsun-boot](https://github.com/mugsun/mugsun-boot)。
+mugsun 的浏览器埋点 SDK。它采集页面浏览、点击、性能指标和 JS 错误，上报到 mugsun 的后端：单体版 [mugsun-boot](https://github.com/mugsun/mugsun-boot)，或微服务版 [mugsun-cloud](https://github.com/mugsun/mugsun-cloud)。
 
-采集、存储和分析都在你自己的服务器上完成。下图是管理后台里的会话回放。
+数据存在后端的埋点库里，不经过第三方服务。下图是管理后台里的会话回放。
 
 ![会话回放页](https://docs.mugsun.com/readme/track-replay.png)
 
@@ -22,7 +22,7 @@ pnpm add @mugsun/track-web
 import { createTracker } from '@mugsun/track-web'
 
 const track = createTracker({
-  endpoint: 'https://your-host', // mugsun-boot 的地址，不用加路径
+  endpoint: 'https://your-host', // 后端的地址（微服务版填网关的地址），不用加路径
   appKey: 'your-app-key', // 在管理后台「埋点分析 → 接入管理」里创建
   release: import.meta.env.VITE_APP_VERSION, // 可选，应用的版本号，建议构建时注入
 })
@@ -127,7 +127,7 @@ rrweb 在回放启用时才加载。`/core` 和 `/replay` 的体积在构建时�
 ```mermaid
 flowchart LR
     PAGE["你的页面<br/>@mugsun/track-web"]
-    BOOT["mugsun-boot<br/>track 模块"]
+    BOOT["mugsun 后端<br/>track 模块"]
     PG[("PostgreSQL<br/>mugsun_track 库")]
     PC["管理后台<br/>埋点分析"]
 
@@ -136,7 +136,7 @@ flowchart LR
     PC -->|"查询"| BOOT
 ```
 
-埋点数据单独存在 `mugsun_track` 库里，和业务库分开。
+埋点数据单独存在 `mugsun_track` 库里，和业务库分开。微服务版里，接收事件的是网关后面的 track 服务，路径相同。
 
 ## 本地开发
 
@@ -153,7 +153,7 @@ pnpm build
 ## 目前的限制
 
 - 只支持浏览器。
-- 只能上报到 mugsun-boot，没有托管的云服务。
+- 只能上报到 mugsun 的后端（单体版或微服务版），没有托管的云服务。
 - 回放不录 canvas。
 - 没有公网演示环境。
 
@@ -162,6 +162,7 @@ pnpm build
 | 仓库 | 说明 |
 | --- | --- |
 | [mugsun-boot](https://github.com/mugsun/mugsun-boot) | 后端，接收事件并提供分析接口 |
+| [mugsun-cloud](https://github.com/mugsun/mugsun-cloud) | 后端的微服务版，事件由其中的 track 服务接收 |
 | [mugsun-pc](https://github.com/mugsun/mugsun-pc) | 管理后台，接入管理和分析看板在这里 |
 | [mugsun-docs](https://github.com/mugsun/mugsun-docs) | 文档站 [docs.mugsun.com](https://docs.mugsun.com/) 的源码 |
 

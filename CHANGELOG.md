@@ -7,6 +7,8 @@
 ### Docs
 
 - README 中英文重写：安装示例、插件表、隐私默认值和入口体积
+- README 中英文开头改写：数据存在后端的埋点库里，不经过第三方服务
+- README 中英文写上后端也可以是微服务版 mugsun-cloud
 - README 中英补充 `release` 传法与构建注入示例（Vite `import.meta.env` / `process.env` / CI）
 
 ## [0.3.0] - 2026-10-22
